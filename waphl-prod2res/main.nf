@@ -17,9 +17,7 @@ println "Files will be saved with timestamp: ${now_unix}"
 =============================================================================================================================
 */
 def meta_dir = file(params.outdir).resolve("meta")
-if( ! meta_dir.exists() ){ meta_dir.mkdir() }
-def meta_file = meta_dir.resolve("${now_unix}.meta.csv")
-meta_file.txt = ""
+meta_dir.mkdir()
 
 /*
 =============================================================================================================================
@@ -82,6 +80,7 @@ workflow {
     
     ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
 
+    meta_file = meta_dir.resolve("${now_unix}.csv")
     Channel
         .of("id,workflow,file,timestamp,origin,current")
         .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
