@@ -13,6 +13,15 @@ println "Files will be saved with timestamp: ${now_unix}"
 
 /*
 =============================================================================================================================
+    PREAPRE OUTPUT
+=============================================================================================================================
+*/
+def meta_dir = file(params.outdir).resolve("meta")
+if( ! meta_dir.exists() ){ meta_dir.mkdir() }
+def meta_file = meta_dir.resolve("${now_unix}.meta.csv")
+
+/*
+=============================================================================================================================
     DETERMINE TIMESPAN
 =============================================================================================================================
 */
@@ -76,7 +85,7 @@ workflow {
         .of("id,workflow,file,timestamp,origin,current")
         .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
         .collect()
-        .subscribe{ file(params.outdir).resolve("meta").resolve("${now_unix}.meta.csv").text = it.join('\n') }
+        .subscribe{ meta_file.text = it.join('\n') }
 
 }
 
