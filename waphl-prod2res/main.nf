@@ -19,6 +19,7 @@ println "Files will be saved with timestamp: ${now_unix}"
 def meta_dir = file(params.outdir).resolve("meta")
 if( ! meta_dir.exists() ){ meta_dir.mkdir() }
 def meta_file = meta_dir.resolve("${now_unix}.meta.csv")
+meta_file.txt = ""
 
 /*
 =============================================================================================================================
