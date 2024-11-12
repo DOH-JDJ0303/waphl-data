@@ -78,30 +78,31 @@ workflow {
     =============================================================================================================================
     */
 
-    // THROTTLE (
-    //     ch_files.collate(params.batchsize)
-    // )
+    THROTTLE (
+        ch_files.collate(params.batchsize)
+    )
 
-    // THROTTLE
-    //     .out
-    //     .files
-    //     .flatten()
-    //     .set{ ch_th_files }
+    THROTTLE
+        .out
+        .files
+        .flatten()
+        .set{ ch_th_files }
     
-    // // ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
+    // ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
 
-    // Channel
-    //     .of("id,workflow,run,file,timestamp,origin,current")
-    //     .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.run},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
-    //     .collect()
-    //     .subscribe{ meta_tmp.text = it.join('\n')
-    //                 if(count_lines(meta_tmp) > 1){meta_tmp.copyTo(meta_file)} }
+    Channel
+        .of("id,workflow,run,file,timestamp,origin,current")
+        .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.run},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
+        .collect()
+        .subscribe{ meta_tmp.text = it.join('\n')
+                    if(count_lines(meta_tmp) > 1){meta_tmp.copyTo(meta_file)} }
+    
         
 }
 
 workflow.onComplete {
 
-    def file_count = count_lines(meta_tmp)
+    def file_count = meta_tmp.exists() ? count_lines(meta_tmp) : 1
     meta_file  = file_count > 1 ? meta_file : "None"
 
     def msg = """\
