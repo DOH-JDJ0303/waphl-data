@@ -72,6 +72,18 @@ workflow {
         .unique()
         .set{ ch_files }
 
+    // return list of runs being transferred
+    ch_files
+        .map{ [ it.run, it.timestamp ] }
+        .unique()
+        .map{ run,timestamp -> "${run}\t${timestamp}" }
+        .set{ ch_transfer_summary }
+    Channel.of("Transfer Summary:\nRun\tTimestamp")
+        .concat(ch_transfer_summary)
+        .collect()              
+        .map{ line -> line.join('\n') }
+        .view()
+
     /*
     =============================================================================================================================
         TRANSFER FILES
