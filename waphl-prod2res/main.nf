@@ -66,8 +66,8 @@ workflow {
         .filter{ it.directory && it.timestamp >= start_time && it.timestamp <= end_time && it.manifest }
         .map{ [ it.run, it.workflow, it.timestamp, apply_schema(it.run, it.workflow, it.manifest, retention_schema) ] }
         .transpose()
-        .map{ run, workflow, timestamp, files -> [ run: run, workflow: workflow, timestamp: timestamp, sample: files.sample, fileorigin: file(files.file), filename: file(files.file).getName() ] }
-        .map{  it + [ filedest: file(params.outdir, checkIfExists: false ) / "data" / "id=${it.sample}" / "workflow=${it.workflow}" / "run=${it.run}" / "file=${it.filename}" / "timestamp=${it.timestamp}" / it.filename ] }
+        .map{ run, workflow, timestamp, files -> [ run: run, workflow: workflow, timestamp: timestamp, sample: files.sample, fileorigin: file(files.file), filename: file(files.file).getName(), runname: run.toString().tokenize('/')[-1] ] }
+        .map{  it + [ filedest: file(params.outdir, checkIfExists: false ) / "data" / "id=${it.sample}" / "workflow=${it.workflow}" / "run=${it.runname}" / "file=${it.filename}" / "timestamp=${it.timestamp}" / it.filename ] }
         .map{ it + [ strorigin: pathToString(it.fileorigin), strdest: pathToString(it.filedest) ] }
         .unique()
         .set{ ch_files }
@@ -88,11 +88,11 @@ workflow {
         .flatten()
         .set{ ch_th_files }
     
-    // ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
+    ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
 
     Channel
         .of("id,workflow,run,file,timestamp,origin,current")
-        .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.run},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
+        .concat(ch_th_files.map{ "${it.sample},${it.workflow},${it.runname},${it.filename},${it.timestamp},${it.strorigin},${it.strdest}" })
         .collect()
         .subscribe{ meta_tmp.text = it.join('\n')
                     if(count_lines(meta_tmp) > 1){meta_tmp.copyTo(meta_file)} }
