@@ -37,7 +37,7 @@ cat samplesheet.csv && echo -e "\n"
 #----- RUN PIPELINE -----#
 echo -e "\nStarting pipeline:"
 # run waphl-prod2res
-CMD="nextflow run waphl-data/waphl-prod2res/main.nf --input samplesheet.csv --retention_schema waphl-prod2res/retention-schemes.config --outdir ${OUTDIR}"
+CMD="nextflow run waphl-data/waphl-prod2res/main.nf --input samplesheet.csv --retention_schema waphl-data/waphl-prod2res/retention-schemes.config --outdir ${OUTDIR}"
 echo -e "\nCMD: ${CMD}\n"
 ${CMD}
 
