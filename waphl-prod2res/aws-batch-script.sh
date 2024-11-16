@@ -10,7 +10,6 @@ echo "S3_BUCKET: ${S3_BUCKET}"
 echo "S3_KEY: ${S3_KEY}"
 echo "OUTDIR: ${OUTDIR}"
 
-
 #----- DETERMINE WORKFLOW & RUN DIRECTORY -----#
 # use file name to determine the workflow and how the run
 # name should be structured within the object key path
