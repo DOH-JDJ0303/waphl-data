@@ -26,7 +26,7 @@ case "${FILENAME}" in
         echo "Error: ${FILENAME} does not match 'Phoenix_Summary.tsv'." && exit 1
         ;;
 esac
-echo "WORKFLOW: ${WORKFLOW}\n"
+echo -e "WORKFLOW: ${WORKFLOW}\n"
 
 #----- BUILD SAMPLESHEET -----#
 echo -e "\nCreating Samplesheet:"
