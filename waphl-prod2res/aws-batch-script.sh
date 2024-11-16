@@ -26,7 +26,7 @@ esac
 
 #----- BUILD SAMPLESHEET -----#
 echo "workflow,run" > samplesheet.csv
-echo "${WORKFLOW},${RUNDIR}" >> samplesheet.csv
+echo "${WORKFLOW},s3://${S3_BUCKET}/${RUNDIR}" >> samplesheet.csv
 echo -e "\nRunning samplesheet:" && cat samplesheet.csv && echo -e "\n"
 
 #----- RUN PIPELINE -----#
