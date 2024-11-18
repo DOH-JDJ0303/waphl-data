@@ -40,7 +40,7 @@ def meta_file = file(params.outdir).resolve("meta").resolve("${now_unix}.csv")
 =============================================================================================================================
 */
 if( ! (params.delta || params.start || params.end) ){ exit 1, "ERROR: Provide a timespan using `--delta` or `--start` and `--end`" }
-if( params.delta && (params.start || params.end) ){ exit 1, "ERROR: Provide a timespan using either `--delta` or `--start` and `--end` - not both!" }
+if( params.delta && (params.start && params.end) ){ params.delat = null }
 if( ( params.start && ! params.end ) || ( ! params.start && params.end ) ){ exit 1, "ERROR: Both `--start` and `--end` must be specifed when not using `--delta`" }
 if( params.end < params.start ){ exit 1, "ERROR: `--start` must be smaller than `--end`." }
 def start_time = params.start ? params.start : now_unix - params.delta
@@ -56,7 +56,7 @@ workflow {
     Channel
         .fromPath(file(params.input))
         .splitCsv(header: true)
-        .map{ it -> [ it.workflow, file(it.path).listFiles().toList() ] }
+        .map{ it -> [ it.workflow, it.path ? file(it.path).listFiles().toList() : file(it.run) ] }
         .transpose()
         .map{ workflow, run -> [ workflow: workflow, 
                                  run: run, 
