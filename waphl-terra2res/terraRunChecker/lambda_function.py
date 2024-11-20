@@ -38,15 +38,15 @@ def terraRunChecker(project,workspace,bucket,queue_url):
     # send SQS message for each new run
     # Create an SQS client 
     sqs = boto3.client('sqs')
-    # URL of the SQS queue  
-    # for run in newruns:
-    #     # Message to send
-    #     msg =  f'{{"project":"{project}", "workspace":"{workspace}", "submissionId":"{run}", "submissionEntity":"{newruns[run]}"}}'
-    #     print(msg)
-    #     # Send the message
-    #     response = sqs.send_message( QueueUrl=queue_url, MessageBody=msg ) 
-    #     # Print out the response 
-    #     print(response)
+    #URL of the SQS queue  
+    for run in newruns:
+        # Message to send
+        msg =  f'{{"project":"{project}", "workspace":"{workspace}", "submissionId":"{run}", "submissionEntity":"{newruns[run]}"}}'
+        print(msg)
+        # Send the message
+        response = sqs.send_message( QueueUrl=queue_url, MessageBody=msg ) 
+        # Print out the response 
+        print(response)
 
 def handler(event, context):
     # get secrets
