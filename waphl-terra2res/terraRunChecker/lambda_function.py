@@ -7,6 +7,7 @@ from datetime import datetime
 import re
 import boto3
 from botocore.exceptions import ClientError
+import os
 
 def terraRunChecker(project,workspace,bucket,queue_url):
     # create dictionary of Terra entities (runs) and their submission IDs
@@ -38,18 +39,18 @@ def terraRunChecker(project,workspace,bucket,queue_url):
     # Create an SQS client 
     sqs = boto3.client('sqs')
     # URL of the SQS queue  
-    for run in newruns:
-        # Message to send
-        msg =  f'{{"project":"{project}", "workspace":"{workspace}", "submissionId":"{run}", "submissionEntity":"{newruns[run]}"}}'
-        print(msg)
-        # Send the message
-        # response = sqs.send_message( QueueUrl=queue_url, MessageBody=msg ) 
-        # # Print out the response 
-        # print(response)
+    # for run in newruns:
+    #     # Message to send
+    #     msg =  f'{{"project":"{project}", "workspace":"{workspace}", "submissionId":"{run}", "submissionEntity":"{newruns[run]}"}}'
+    #     print(msg)
+    #     # Send the message
+    #     response = sqs.send_message( QueueUrl=queue_url, MessageBody=msg ) 
+    #     # Print out the response 
+    #     print(response)
 
 def handler(event, context):
     # get secrets
-    secret_name = "terraRunChecker"
+    secret_name = "terraRunChecker/1"
     region_name = "us-west-2"
 
     # Create a Secrets Manager client
@@ -74,10 +75,21 @@ def handler(event, context):
     terra_workspaces   = secret["terra_workspaces"].split(',')
     aws_results_bucket = secret["aws_results_bucket"]
     aws_prod_sqs_url   = secret["aws_prod_sqs_url"]
+    google_credentials = secret["google_credentials"]
+
+    # set gcloud credentials
+    google_credentials = "s3://waphl-results/assets/.config/gcloud/application_default_credentials.json"
+    s3_client    = boto3.client('s3')
+    gcred_split  = google_credentials.replace('s3://','').split('/')
+    gcred_bucket = gcred_split[0]
+    gcred_key    = '/'.join(gcred_split[1:])
+    gcred_local  = "google_credentials.json"
+    s3_client.download_file(gcred_bucket, gcred_key, gcred_local)
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcred_local
 
     # iterate over workspaces
     for wksp in terra_workspaces:
-        terraRunChecker(terra_project, wksp, aws_results_bucket, aws_prod_sqs_url )
+        terraRunChecker(terra_project, wksp, aws_results_bucket, aws_prod_sqs_url)
 
 # # for dev
 # handler('test','test')
