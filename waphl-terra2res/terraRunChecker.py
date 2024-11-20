@@ -11,35 +11,43 @@ if __name__ == "__main__":
     # application arguments
     parser.add_argument('-p', '--project', type=str, required=True, help='Terra namespace/project of workspace.')
     parser.add_argument('-w', '--workspace', type=str, required=True, help='Name of Terra workspace.')
-    parser.add_argument('-d', '--delta', type=int, required=True, help='Timespan to consider a run as new')
+    parser.add_argument('-o', '--outdir', type=str, required=True, help='URI to output directory.')
     args = parser.parse_args()
 
     # Get the current date and time 
     now = int(datetime.now().timestamp())
-    timespan = now - args.delta
 
     r = fapi.list_submissions(args.project, args.workspace)
     fapi._check_response_code(r, 200)
-    newruns = []
+    runs = {}
     for elem in r.json():
-        timest   = int(datetime.strptime(elem["submissionDate"], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()) > timespan
         setst    = bool(re.search(r'_set',elem["submissionEntity"]["entityType"]))
         runst    = elem["status"] == "Done"
         samplest = "Succeeded" in elem["workflowStatuses"]
-        if timest and not setst and runst and samplest:
-            newruns.append(elem["submissionEntity"]["entityType"])
-    # get unique values
-    newruns = list(set(newruns))
+        if not setst and runst and samplest:
+            runs[elem["submissionId"]] = elem["submissionEntity"]["entityType"]
+    
+    s3_bucket = args.outdir.replace('s3://', '').replace('/','')
+    cache_key = f'cache/terra/{args.project}_{args.workspace}.csv'
+
+    s3_client = boto3.client('s3')
+    try:
+        response = s3_client.get_object(Bucket=s3_bucket, Key=cache_key) 
+        cache = response['Body'].read().decode('utf-8').split('\n')
+        newids = [id for id in list(runs.keys()) if id not in cache]
+        newruns = {key: runs[key] for key in newids if key in runs}
+    except:
+        newruns = runs
 
     # send SQS message for each new run
     # Create an SQS client 
     sqs = boto3.client('sqs')
     # URL of the SQS queue 
-    queue_url = 'https://sqs.us-west-2.amazonaws.com/398869308272/waphl-production-queue'  
+    queue_url = 'insert url here'  
     for run in newruns:
-        # Message to send 
+        # Message to send
         msg =  f'{{"project":"{args.project}", "workspace":"{args.workspace}", "run":"{run}"}}'
-        # Send the message 
+        # Send the message
         response = sqs.send_message( QueueUrl=queue_url, MessageBody=msg ) 
         # Print out the response 
         print(response)
