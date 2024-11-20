@@ -94,6 +94,8 @@ workflow {
         .map{ workflow, run, sample, f -> [ run: run, workflow: workflow, timestamp: (file(f).lastModified() / 1000).round(), sample: sample, fileorigin: file(f), filename: file(f).getName(), runname: run ] }
         .map{  it + [ filedest: file(params.outdir, checkIfExists: false ) / "data" / "id=${it.sample}" / "workflow=${it.workflow}" / "run=${it.runname}" / "file=${it.filename}" / "timestamp=${it.timestamp}" / it.filename ] }
         .map{ it + [ strorigin: pathToString(it.fileorigin), strdest: pathToString(it.filedest) ] }
+        .unique()
+        .filter{ it.filedest.exists() ? false : true }
         .set{ ch_files }
         
     /*

@@ -70,6 +70,7 @@ workflow {
         .map{  it + [ filedest: file(params.outdir, checkIfExists: false ) / "data" / "id=${it.sample}" / "workflow=${it.workflow}" / "run=${it.runname}" / "file=${it.filename}" / "timestamp=${it.timestamp}" / it.filename ] }
         .map{ it + [ strorigin: pathToString(it.fileorigin), strdest: pathToString(it.filedest) ] }
         .unique()
+        .filter{ it.filedest.exists() ? false : true }
         .set{ ch_files }
 
     // return list of runs being transferred
