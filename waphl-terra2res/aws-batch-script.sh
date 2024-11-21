@@ -22,7 +22,7 @@ echo -e "\n"
 
 #----- CONFIGURE GCLOUD -----#
 aws s3 cp $GCRED google_credentials.json
-export GOOGLE_APPLICATION_CREDENTIALS='$PWD/google_credentials.json'
+export GOOGLE_APPLICATION_CREDENTIALS="$PWD/google_credentials.json"
 
 #----- BUILD SAMPLESHEET -----#
 echo -e "\nCreating Samplesheet:"
