@@ -40,7 +40,7 @@ ${CMD}
 #----- UPDATE LOG FILE -----#
 echo -e "\nUpdating log file"
 TIMESTAMP=$(cat .nextflow.log | grep "Files will be saved with timestamp:" | cut -f 4 -d ':' | tr -d ' ')
-aws s3 cp .nextflow.log ${OUTDIR%%/}/logs/${TIMESTAMP}-waphl-terra2res.log
+aws s3 cp .nextflow.log s3://${OUTDIR%%/}/logs/${TIMESTAMP}-waphl-terra2res.log
 
 #----- CACHE SUBMISSION ID -----#
 touch empty_file && aws s3 cp empty_file "s3://${OUTDIR}/cache/terra/${TERRA_PROJECT}/${TERRA_WORKFLOW}/${TERRA_SUBMISSIONID}"
