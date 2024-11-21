@@ -2,10 +2,10 @@
 FROM docker.io/amazonlinux:latest
 
 # install dependencies
-RUN yum -y install git-all unzip zip java-17-amazon-corretto-devel aws-cli which
+RUN yum -y install git-all unzip zip java-17-amazon-corretto-devel aws-cli which python3-pip
+RUN pip install boto3 firecloud
 
 # Install Nextflow
 RUN curl -s https://get.nextflow.io | bash
 RUN chmod +x nextflow && mv nextflow /usr/local/bin
 RUN nextflow plugin install nf-amazon
-
