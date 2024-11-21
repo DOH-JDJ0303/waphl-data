@@ -104,7 +104,7 @@ def handler(event, context):
         raise e
     
     # parse secret
-    secret = json.loads(get_secret_value_response['SecretString'])
+    secret = json.loads(get_secret_value_response['waphl-terra2res/2'])
     terra_project      = secret["terra_project"]
     terra_workspaces   = secret["terra_workspaces"].split(',')
     aws_results_bucket = secret["aws_results_bucket"]
