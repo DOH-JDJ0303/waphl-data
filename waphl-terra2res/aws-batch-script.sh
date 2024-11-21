@@ -33,7 +33,7 @@ cat samplesheet.csv && echo -e "\n"
 #----- RUN PIPELINE -----#
 echo -e "\nStarting pipeline:"
 # run waphl-prod2res
-CMD="nextflow run waphl-data/waphl-prod2res/main.nf --input samplesheet.csv --outdir s3://${OUTDIR}"
+CMD="nextflow run waphl-data/waphl-terra2res/main.nf --input samplesheet.csv --outdir s3://${OUTDIR}"
 echo -e "\nCMD: ${CMD}\n"
 ${CMD}
 
