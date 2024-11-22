@@ -17,7 +17,7 @@ println "Files will be saved with timestamp: ${now_unix}"
 =============================================================================================================================
 */
 // Log File
-def log_name = "${now_unix}-waphl-prod2res.log"
+def log_name = "${now_unix}-waphl-terra2res.log"
 def log_tmp = file(workflow.workDir).resolve(log_name)
 def log_file = file(params.outdir).resolve("logs").resolve(log_name)
 log_tmp.text = "Note: If this message is not updated it means the workflow failed."
