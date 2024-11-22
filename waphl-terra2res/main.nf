@@ -83,6 +83,14 @@ workflow {
         ch_tables
     )
 
+    // channel for saving the Terra Table - this is a run-level file (i.e., sample = null)
+    EXPORT_TABLE
+        .out
+        .table
+        .map{ workflow, run, table -> [ workflow, run, null, table ] }
+        .set{ ch_tables }
+
+    // get list of files in each Terra Table.
     EXPORT_TABLE
         .out
         .table
@@ -91,6 +99,7 @@ workflow {
         .transpose()
         .filter{ workflow, run, sample, result -> result.contains("gs://") }
         .filter{ workflow, run, sample, f -> file(f).exists() }
+        .concat(ch_tables)
         .map{ workflow, run, sample, f -> [ run: run, workflow: workflow, timestamp: (file(f).lastModified() / 1000).round(), sample: sample, fileorigin: file(f), filename: file(f).getName(), runname: run ] }
         .map{  it + [ filedest: file(params.outdir, checkIfExists: false ) / "data" / "id=${it.sample}" / "workflow=${it.workflow}" / "run=${it.runname}" / "file=${it.filename}" / "timestamp=${it.timestamp}" / it.filename ] }
         .map{ it + [ strorigin: pathToString(it.fileorigin), strdest: pathToString(it.filedest) ] }
@@ -209,11 +218,11 @@ process EXPORT_TABLE {
     tuple val(project), val(workspace), val(table), val(workflow)
 
     output:
-    tuple val(workflow), val(table), path('*.tsv'), emit: table
+    tuple val(workflow), val(table), path('terra_table.tsv'), emit: table
 
     script:
     """
-    export_large_tsv.py -p ${project} -w ${workspace} -e ${table} -f ${table}.tsv
+    export_large_tsv.py -p ${project} -w ${workspace} -e ${table} -f terra_table.tsv
     """
 }
 
