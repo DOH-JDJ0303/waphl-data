@@ -13,15 +13,21 @@ import os
 
 def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     # create dictionary of Terra entities (runs) and their submission IDs
+    # get list of Terra entities (tables)
+    t = fapi.list_entity_types(project, workspace)
+    if t.status_code != 200:
+        print(t.text)
+        exit(1)
+    entity_types_json = t.json()
     ## get list of Terra submissions
     r = fapi.list_submissions(project, workspace)
     fapi._check_response_code(r, 200)
     runs = {}
     for elem in r.json():
-        setst    = bool(re.search(r'_set',elem["submissionEntity"]["entityType"]))
-        runst    = elem["status"] == "Done"
-        samplest = "Succeeded" in elem["workflowStatuses"]
-        if not setst and runst and samplest:
+        entityst = elem["submissionEntity"]["entityType"] in entity_types_json # check that the entity has data available
+        runst    = elem["status"] == "Done" # check the the entity is done
+        samplest = "Succeeded" in elem["workflowStatuses"] # check that the entity has samples that succeeded
+        if entityst and runst and samplest:
             runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"], elem["submissionDate"] ]
     
     # select most recent version of each entity
