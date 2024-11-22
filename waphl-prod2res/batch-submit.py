@@ -20,7 +20,7 @@ PREFIX=$(cat .nextflow.log | grep "Files will be saved with prefix:" | cut -f 4 
     
     batch_client = boto3.client('batch')
     response = batch_client.submit_job(
-            jobName=f'{workflow}_{run.split("/")[-2]}',
+            jobName=f'{workflow}_{run.split("/")[-2].replace(".","-")}',
             jobQueue=jobqueue,
             jobDefinition=jobdef,
             containerOverrides={
@@ -76,11 +76,11 @@ if __name__ == "__main__":
         runs.append([workflow, run])
     
     # check that each run URI exists
-    for line in runs:
-        bucket = line[1].replace('s3://','').split('/')[0]
-        key = line[1].replace(f's3://{bucket}/', '')
-        if not check_file_exists(bucket, key):
-            raise ValueError(f'{line[1]} does not exist!')
+    # for line in runs:
+    #     bucket = line[1].replace('s3://','').split('/')[0]
+    #     key = line[1].replace(f's3://{bucket}/', '')
+    #     if not check_file_exists(bucket, key):
+    #         raise ValueError(f'{line[1]} does not exist!')
 
     # submit batch job for each run
     for line in runs:
