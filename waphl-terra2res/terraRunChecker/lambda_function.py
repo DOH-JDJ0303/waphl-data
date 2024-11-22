@@ -46,7 +46,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     # iterate over the entries and select the most recent one for each entity
     most_recent = {}
     for key, value in newruns.items():
-        name = value[0]
+        name = value[1]
         if name not in most_recent or value[2] > most_recent[name][2]:
             most_recent[name] = value
     # submit a batch job for each new run
