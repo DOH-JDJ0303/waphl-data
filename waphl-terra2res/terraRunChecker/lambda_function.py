@@ -23,23 +23,22 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
         samplest = "Succeeded" in elem["workflowStatuses"]
         if not setst and runst and samplest:
             runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"], elem["submissionDate"] ]
-        
-    # select the most recent version of each run entity
-    ## convert string time to datetime object for comparison
-    for key, value in runs.items():
-        value[2] = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ')
-    # iterate over the entries and select the most recent one for each entity
-    most_recent = {}
-    for key, value in runs.items():
-        name = value[1]
-        if name not in most_recent or value[2] > most_recent[name][2]:
-            most_recent[name] = value
+    
+    # select most recent version of each entity
+    most_recent = {} 
+    for key, value in runs.items(): 
+        name = value[1] 
+        current_time = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ') 
+        # If the name is not in most_recent or the current time is more recent, update the entry 
+        if name not in most_recent or current_time > datetime.strptime(most_recent[name][2], '%Y-%m-%dT%H:%M:%S.%fZ'): 
+            most_recent[name] = value 
+    runs = {k: v for k, v in runs.items() if v[1] in most_recent and v == most_recent[v[1]]}
 
     # determine if there any new runs based on the submission IDs and existing ID cache
     cache_key = f'cache/terra/{project}/{workspace}/'
     s3_client = boto3.client('s3')
     response = s3_client.list_objects_v2( Bucket=bucket, Prefix=cache_key, Delimiter='/' )
-    if 'Contents' in response: 
+    if 'Contents' in response:
         cache = []
         for obj in response['Contents']:
             cache.append(obj['Key'].replace(cache_key, ''))
@@ -51,7 +50,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     # limit to 20 runs 
     if len(newruns) > 10:
         newruns = {k: newruns[k] for k in list(newruns)[:19]}
-
+    
     # submit a batch job for each new run
     batch_client = boto3.client('batch')
     for run in newruns:
