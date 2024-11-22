@@ -52,7 +52,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     if len(newruns) > 10:
         newruns = {k: newruns[k] for k in list(newruns)[:19]}
 
-    submit a batch job for each new run
+    # submit a batch job for each new run
     batch_client = boto3.client('batch')
     for run in newruns:
         response = batch_client.submit_job(
