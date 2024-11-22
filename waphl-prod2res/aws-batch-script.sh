@@ -43,7 +43,7 @@ ${CMD}
 
 #----- RUN PIPELINE -----#
 echo -e "\nUpdating log file"
-TIMESTAMP=$(cat .nextflow.log | grep "Files will be saved with timestamp:" | cut -f 4 -d ':' | tr -d ' ')
-aws s3 cp .nextflow.log ${OUTDIR%%/}/logs/${TIMESTAMP}-waphl-prod2res.log
+PREFIX=$(cat .nextflow.log | grep "Files will be saved with prefix:" | cut -f 4 -d ':' | tr -d ' ')
+aws s3 cp .nextflow.log ${OUTDIR%%/}/logs/${PREFIX}-waphl-prod2res.log
 
 echo -e "\nPipeline Complete!"
