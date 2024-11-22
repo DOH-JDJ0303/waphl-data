@@ -43,6 +43,6 @@ TIMESTAMP=$(cat .nextflow.log | grep "Files will be saved with timestamp:" | cut
 aws s3 cp .nextflow.log s3://${OUTDIR%%/}/logs/${TIMESTAMP}-waphl-terra2res.log
 
 #----- CACHE SUBMISSION ID -----#
-touch empty_file && aws s3 cp empty_file "s3://${OUTDIR}/cache/terra/${TERRA_PROJECT}/${TERRA_WORKFLOW}/${TERRA_SUBMISSIONID}"
+touch empty_file && aws s3 cp empty_file "s3://${OUTDIR}/cache/terra/${TERRA_PROJECT}/${TERRA_WORKSPACE}/${TERRA_SUBMISSIONID}"
 
 echo -e "\nPipeline Complete!"
