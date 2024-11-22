@@ -12,3 +12,4 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN curl -s https://get.nextflow.io | bash
 RUN chmod +x nextflow && mv nextflow /usr/local/bin
 RUN nextflow plugin install nf-amazon
+RUN nextflow plugin install nf-google

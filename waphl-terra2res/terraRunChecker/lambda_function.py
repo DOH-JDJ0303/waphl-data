@@ -22,7 +22,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
         runst    = elem["status"] == "Done"
         samplest = "Succeeded" in elem["workflowStatuses"]
         if not setst and runst and samplest:
-            runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"] ]
+            runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"], elem["submissionDate"] ]
 
     # determine if there any new runs based on the submission IDs and existing ID cache
     cache_key = f'cache/terra/{project}/{workspace}/'
@@ -36,12 +36,25 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
         newruns = {key: runs[key] for key in newids if key in runs}
     else:
         newruns = runs
-    
+
+    newruns = runs
+
+    # select the most recent version of each run entity
+    ## convert string time to datetime object for comparison
+    for key, value in newruns.items():
+        value[2] = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ')
+    # iterate over the entries and select the most recent one for each entity
+    most_recent = {}
+    for key, value in newruns.items():
+        name = value[0]
+        if name not in most_recent or value[2] > most_recent[name][2]:
+            most_recent[name] = value
     # submit a batch job for each new run
     batch_client = boto3.client('batch')
-    # limit to 10 runs 
+
+    # limit to 20 runs 
     if len(newruns) > 10:
-        newruns = newruns[:9]
+        newruns = {k: newruns[k] for k in list(newruns)[:19]}
     for run in newruns:
         response = batch_client.submit_job(
                 jobName=f'{project}_{workspace}_{run}',
@@ -84,7 +97,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
 
 def handler(event, context):
     # get secrets
-    secret_name = "terraRunChecker/2"
+    secret_name = 'waphl-terra2res/241121'
     region_name = "us-west-2"
 
     # Create a Secrets Manager client
@@ -104,7 +117,7 @@ def handler(event, context):
         raise e
     
     # parse secret
-    secret = json.loads(get_secret_value_response['waphl-terra2res/2'])
+    secret = json.loads(get_secret_value_response['SecretString'])
     terra_project      = secret["terra_project"]
     terra_workspaces   = secret["terra_workspaces"].split(',')
     aws_results_bucket = secret["aws_results_bucket"]
