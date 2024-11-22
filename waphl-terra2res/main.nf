@@ -9,23 +9,25 @@ nextflow.enable.dsl = 2
 */
 Date now = new Date()
 long now_unix = now.getTime() / 1000
-println "Files will be saved with timestamp: ${now_unix}"
 
 /*
 =============================================================================================================================
     PREPARE OUTPUTS
 =============================================================================================================================
 */
+def filePrefix = "${now_unix}-${workflow.sessionId}"
+println "Files will be saved with prefix: ${filePrefix}"
+
 // Log File
-def log_name = "${now_unix}-waphl-terra2res.log"
+def log_name = "${filePrefix}-waphl-terra2res.log"
 def log_tmp = file(workflow.workDir).resolve(log_name)
 def log_file = file(params.outdir).resolve("logs").resolve(log_name)
 log_tmp.text = "Note: If this message is not updated it means the workflow failed."
 log_tmp.moveTo(log_file)
 
 // Meta File
-def meta_tmp  = file(workflow.workDir).resolve("${now_unix}.csv")
-def meta_file = file(params.outdir).resolve("meta").resolve("${now_unix}.csv")
+def meta_tmp  = file(workflow.workDir).resolve("${filePrefix}.csv")
+def meta_file = file(params.outdir).resolve("meta").resolve("${filePrefix}.csv")
 
 workflow {
 
@@ -141,7 +143,7 @@ workflow.onComplete {
     def msg = """\
         Pipeline execution summary
         ---------------------------
-        Timestamp         : ${now_unix}
+        File Prefix       : ${filePrefix}
         Log file          : ${log_file}
         Metadata file     : ${meta_file}
         Files transferred : ${file_count - 1}

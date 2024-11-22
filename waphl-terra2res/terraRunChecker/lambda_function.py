@@ -23,6 +23,17 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
         samplest = "Succeeded" in elem["workflowStatuses"]
         if not setst and runst and samplest:
             runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"], elem["submissionDate"] ]
+        
+    # select the most recent version of each run entity
+    ## convert string time to datetime object for comparison
+    for key, value in runs.items():
+        value[2] = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ')
+    # iterate over the entries and select the most recent one for each entity
+    most_recent = {}
+    for key, value in runs.items():
+        name = value[1]
+        if name not in most_recent or value[2] > most_recent[name][2]:
+            most_recent[name] = value
 
     # determine if there any new runs based on the submission IDs and existing ID cache
     cache_key = f'cache/terra/{project}/{workspace}/'
@@ -37,24 +48,12 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     else:
         newruns = runs
 
-    newruns = runs
-
-    # select the most recent version of each run entity
-    ## convert string time to datetime object for comparison
-    for key, value in newruns.items():
-        value[2] = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ')
-    # iterate over the entries and select the most recent one for each entity
-    most_recent = {}
-    for key, value in newruns.items():
-        name = value[1]
-        if name not in most_recent or value[2] > most_recent[name][2]:
-            most_recent[name] = value
-    # submit a batch job for each new run
-    batch_client = boto3.client('batch')
-
     # limit to 20 runs 
     if len(newruns) > 10:
         newruns = {k: newruns[k] for k in list(newruns)[:19]}
+
+    submit a batch job for each new run
+    batch_client = boto3.client('batch')
     for run in newruns:
         response = batch_client.submit_job(
                 jobName=f'{project}_{workspace}_{run}',
