@@ -16,7 +16,6 @@ def retention_schema = new ConfigSlurper().parse( file(params.retention_schema).
 */
 Date now = new Date()
 long now_unix = now.getTime() / 1000
-println "Files will be saved with timestamp: ${now_unix}"
 
 /*
 =============================================================================================================================
@@ -105,6 +104,7 @@ workflow {
         .set{ ch_th_files }
     
     ch_th_files.subscribe{ file(it.fileorigin).copyTo(file(it.filedest)) }
+    // ch_th_files.subscribe{ copyFileVerbose(it.fileorigin, it.filedest) }
 
     Channel
         .of("id,workflow,run,file,timestamp,origin,current")
@@ -153,9 +153,9 @@ def apply_schema(run_dir, workflow, manifest, schemes){
     def manifest_csv = file(manifest).splitCsv(header: true)
     def read1        = manifest_csv.collect{ [ sample: it.sample, file: file(it.fastq_1).exists() ? it.fastq_1 : null ] }
     def read2        = manifest_csv.collect{ [ sample: it.sample, file: file(it.fastq_2).exists() ? it.fastq_2 : null ] }
-    def sample_files = schema.sample_files.collectMany{ f -> manifest_csv.sample.collect{ sample -> [ sample: sample, file: run_path + f.replace("<sample>", sample) ] } }
+    def sample_files = schema.sample_files.collectMany{ f -> manifest_csv.sample.collect{ sample -> [ sample: sample, file: file(run_path + f.replace("<sample>", sample)).exists() ? file(run_path + f.replace("<sample>", sample)) : null ] } }
     def files        = sample_files + schema.run_files.collect{ f -> [ sample: null, file: run_path + f ] }
-                           .collect{ [ sample: it.sample, file: file(it.file).exists() ? it.file : null ] }
+                            .collect{ [ sample: it.sample, file: file(it.file).exists() ? it.file : null ] }
     files            = files + read1 + read2
     return files.findAll{ it.file }
 }
@@ -174,6 +174,11 @@ def count_lines(myFile){
     myFile.eachLine { str -> count++ }
     return count
 }
+def copyFileVerbose(origin, dest){
+    println "ORIGIN: ${origin}\nDEST: ${dest}"
+    file(origin).copyTo(file(dest))
+}
+
 
 /*
 =============================================================================================================================
