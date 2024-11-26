@@ -24,14 +24,16 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     fapi._check_response_code(r, 200)
     runs = {}
     for elem in r.json():
-        entityst = elem["submissionEntity"]["entityType"] in entity_types_json # check that the entity has data available
-        runst    = elem["status"] == "Done" # check the the entity is done
-        samplest = "Succeeded" in elem["workflowStatuses"] # check that the entity has samples that succeeded
+        # remove '_set' from end of entity names
+        entityType = re.sub('_set$', '', elem["submissionEntity"]["entityType"]) 
+        entityst   = entityType in entity_types_json # check that the entity has data available
+        runst      = elem["status"] == "Done" # check the the entity is done
+        samplest   = "Succeeded" in elem["workflowStatuses"] # check that the entity has samples that succeeded
         if entityst and runst and samplest:
-            runs[elem["submissionId"]] = [ elem["methodConfigurationName"], elem["submissionEntity"]["entityType"], elem["submissionDate"] ]
+            runs[elem["submissionId"]] = [ elem["methodConfigurationName"], entityType, elem["submissionDate"] ]
     
     # select most recent version of each entity
-    most_recent = {} 
+    most_recent = {}
     for key, value in runs.items(): 
         name = value[1] 
         current_time = datetime.strptime(value[2], '%Y-%m-%dT%H:%M:%S.%fZ') 
