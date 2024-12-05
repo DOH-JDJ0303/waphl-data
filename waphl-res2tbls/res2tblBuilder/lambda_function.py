@@ -197,7 +197,7 @@ def create_table_batch(client, jobqueue, jobdef, bucket, key):
             'value': key
         }],
     'command': [
-        'bash','-c','git clone https://github.com/DOH-JDJ0303/waphl-data.git && bash waphl-data/waphl-res2tbl/gba/aws-batch-script.sh $BUCKET $KEY'
+        'bash','-c','git clone https://github.com/DOH-JDJ0303/waphl-data.git && bash waphl-data/waphl-res2tbls/gba/aws-batch-script.sh $BUCKET $KEY'
         ]
         }
     ## Submit job
