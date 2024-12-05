@@ -250,4 +250,4 @@ def handler(event, contxext):
     # Create tables using AWS Batch
     create_table_batch(batch, jobqueue, jobdef, bucket, key)
 
-handler("blah","blah")
+# handler("blah","blah")
