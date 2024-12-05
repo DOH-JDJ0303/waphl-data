@@ -58,6 +58,7 @@ def terraRunChecker(project,workspace,bucket,jobqueue,jobdef,gcred):
     # limit to 20 runs 
     if len(newruns) > 10:
         newruns = {k: newruns[k] for k in list(newruns)[:19]}
+    print(newruns)
     
     # submit a batch job for each new run
     batch_client = boto3.client('batch')
@@ -144,6 +145,6 @@ def handler(event, context):
     for wksp in terra_workspaces:
         terraRunChecker(terra_project, wksp, aws_results_bucket, aws_job_queue, aws_job_def, google_credentials)
 
-# # for dev
+# for dev
 # handler('test','test')
 
