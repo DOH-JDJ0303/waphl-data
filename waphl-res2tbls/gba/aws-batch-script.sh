@@ -16,6 +16,6 @@ DATADIR="s3://${BUCKET}/${KEY}"
 #----- RUN PIPELINE -----#
 echo -e "\nStarting pipeline:"
 # run waphl-prod2res
-CMD="nextflow run waphl-data/waphl-terra2res/main.nf --data ${DATADIR}"
+CMD="nextflow run waphl-data/waphl-res2tbls/main.nf --data ${DATADIR}"
 echo -e "\nCMD: ${CMD}\n"
 ${CMD}
