@@ -185,23 +185,21 @@ def submit_batch_job(client, jobname, jobqueue, jobdef, containeroverrides):
 # Function for creating tables that require AWS Batch
 def create_table_batch(client, jobqueue, jobdef, bucket, key):
     # General bacterial analysis
-    ## Define container overrides - double curly brackets needed to escape f-strings
-    gba = f"""
-    {{ 
-    'environment': [
-        {{
+    ## Define container overrides
+    gba = {
+        'environment': [
+        {
             'name': 'BUCKET',
-            'value': '{bucket}'
-        }},
-        {{
+            'value': bucket
+        },
+        {
             'name': 'KEY',
-            'value': '{key}'
-        }}],
+            'value': key
+        }],
     'command': [
         'bash','-c','git clone https://github.com/DOH-JDJ0303/waphl-data.git && bash waphl-data/waphl-res2tbl/gba/aws-batch-script.sh $BUCKET $KEY'
         ]
-        }}
-        """
+        }
     ## Submit job
     submit_batch_job(client, 'gba_table', jobqueue, jobdef, gba)
 
