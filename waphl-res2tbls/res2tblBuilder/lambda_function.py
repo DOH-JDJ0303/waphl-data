@@ -191,11 +191,11 @@ def create_table_batch(client, jobqueue, jobdef, bucket, key):
     'environment': [
         {{
             'name': 'BUCKET',
-            'value': {bucket}
+            'value': '{bucket}'
         }},
         {{
             'name': 'KEY',
-            'value': {key}
+            'value': '{key}'
         }}],
     'command': [
         'bash','-c','git clone https://github.com/DOH-JDJ0303/waphl-data.git && bash waphl-data/waphl-res2tbl/gba/aws-batch-script.sh $BUCKET $KEY'
