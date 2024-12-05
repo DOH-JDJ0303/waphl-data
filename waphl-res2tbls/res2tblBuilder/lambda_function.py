@@ -179,7 +179,7 @@ def submit_batch_job(client, jobname, jobqueue, jobdef, containeroverrides):
                 jobName=jobname,
                 jobQueue=jobqueue,
                 jobDefinition=jobdef,
-                containerOverrides=" ".join(containeroverrides.split())
+                containerOverrides=containeroverrides
             )
 
 # Function for creating tables that require AWS Batch
