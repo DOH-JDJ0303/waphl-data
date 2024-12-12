@@ -13,7 +13,6 @@ def meta_fasta = file(params.data).resolve('meta.fasta.csv')
 def gba        = file(params.data).resolve('gba.csv')
 def gba_miss   = file(params.data).resolve('gba.miss.csv')
 
-
 workflow {
     /*
     =============================================================================================================================
@@ -29,11 +28,11 @@ workflow {
         .map{ [ it.workflow, it.timestamp, file(it.current) ] }
         .splitCsv(header: true, elem: 2, sep: '\t')
         .map{ workflow, timestamp, results -> [workflow: workflow, timestamp: timestamp ] + formatResults(results) }
-        .map{ [ it.id, [ timestamp: it.timestamp, workflow: it.workflow, species: it.species, qc: it.qc ] ] }
-        .unique()
-        .groupTuple(by: 0)
+        .map{ [ it.id, it ] }
+        .groupTuple(by: 0) // group by sample id
         .map{ id, data -> [ id: id ] + data.max{ it.timestamp } } // select most recent version of each sample
-        .filter{ it.qc == 'FAIL' ? false : true } // select only samples that pass QC
+        .unique() // remove duplicates
+        .filter{ it.qc == 'FAIL' ? false : true } // select only samples that pass QC (if QC data is available)
         .set{ ch_gba }
 
     /*
@@ -49,9 +48,9 @@ workflow {
         .map{ [ it.id_alt, [ it.file, it.current ] ] }
         .unique()
         .groupTuple(by: 0)
-        .join( ch_gba.map{ [ it.id, it.species ] }, by: 0, remainder: true )
-        .filter{ it[2] } // must contain species value
-        .map{ id, fastqs, species -> [ id: id, species: species ] + selectFastqs( fastqs ) }
+        .join( ch_gba.map{ [ it.id, it ] }, by: 0, remainder: true )
+        .filter{ id, fastq, data -> data ? ( data.species ? true : false ) : false  } // must contain species value
+        .map{ id, fastqs, data -> data + selectFastqs( fastqs ) }
         .set{ ch_gba }
 
     /*
@@ -64,13 +63,13 @@ workflow {
     Channel.fromPath(meta_fasta)
         .splitCsv(header: true, quote: '"')
         .filter{ it.file == "${it.id}.scaffolds.fa.gz" || it.file == "${it.id}_contigs.fasta" }
-        .map{ [ it.id_alt, [ it.current, it.timestamp ]  ] }
+        .map{ [ it.id_alt, [ file: it.current, timestamp: it.timestamp ]  ] }
         .unique()
         .groupTuple(by: 0)
-        .map{ id, data -> [ id, data.max{ it[1] }[0] ] }
-        .join( ch_gba.map{ [ it.id, it.species, it.fastq_1, it.fastq_2 ] }, by: 0, remainder: true )
-        .filter{ it[2] } // must contain species value
-        .map{ id, assembly, species, fastq_1, fastq_2 -> [ sample: id, taxa: species, assembly: assembly, fastq_1: fastq_1, fastq_2: fastq_2 ] }
+        .map{ id, data -> [ id, data.max{ it.timestamp } ] }
+        .join( ch_gba.map{ [ it.id, it ] }, by: 0, remainder: true )
+        .filter{ id, fasta, data -> data ? ( data.species ? true : false ) : false  } // must contain species value
+        .map{ id, fasta, data -> data + [ assembly: fasta ? fasta.file : null ] }
         .set{ ch_gba }
 
     /*
@@ -94,6 +93,7 @@ workflow {
         .concat(ch_gba.miss.map{ it.values().join(',') })
         .collectFile(name: 'missing.csv', newLine: true, sort: 'index')
         .subscribe{ file(it).copyTo(gba_miss)  }
+
     // Export sample without missing data
     ch_gba
         .ok
@@ -119,25 +119,36 @@ def extractId(id, pattern){
 
 // Function for identifying and formatting general bacterial analysis results from various sources (PHoeNIx, Theiaprok, RECAPP)
 def formatResults(row){
-    // PHoeNIx run natively
-    if(row.containsKey('ID')){
-        id      = row.ID
-        qc      = row.containsKey('Auto_QC_Outcome') ? row.Auto_QC_Outcome : null
-        species = row.containsKey('Species') ? row.Species : null
-    }
-    // PHoeNIx, TheiaProk, or RECAPP run on Terra
-    else{
-        id      = row[row.keySet().iterator().next()]
-        qc      = row.containsKey('qc_outcome') ? row.qc_outcome : null // PHoeNIx only
-        species = row.containsKey('species') ? row.species : ( row.containsKey('fastani_genus_species') ? row.fastani_genus_species : null )
-    }
-    // Clean sample names
-    // remove run name from sample names
-    id = id.replaceAll(/-WA.*/, '')
-    // extract WA ID or WGS ID if detected
-    id = extractId(id, /WA\d{7}/)
-    id = extractId(id, /\d{4}JQ-\d{5}/)
-    return [ id: id, qc: qc, species: species ]
+    // Define column name options for each result
+    // Note: This only includes results that have been validated or metrics used to evaluate result quality. Exclusion of a column from this list is not necessarily a mistake.
+    cols_key = [
+        qc: [ 'Auto_QC_Outcome', 'qc_outcome', 'aa_qc_check' ],
+        qc_reason:     [ 'Auto_QC_Failure_Reason', 'qc_reason', 'aa_qc_alert' ],
+        read_depth:    [ 'Estimated_Coverage', 'estimated_coverage', 'est_coverage_clean' ],
+        assembly_len:  [ 'Genome_Length', 'genome_length', 'assembly_length' ],
+        n_contigs:     [ '#_of_Scaffolds_>500bp', 'scaffold_count', 'number_contigs' ],
+        per_gc:        [ 'GC_%', 'gc_percent', 'quast_gc_percent' ],
+        species:       [ 'Species', 'species', 'fastani_genus_species' ],
+        species_conf:  [ 'Taxa_Confidence', 'taxa_confidence', 'fastani_ani_estimate' ],
+        mlst_1:        [ 'MLST_1', 'mlst_1' ],
+        mlst_2:        [ 'MLST_2', 'mlst_2' ],
+        mlst_1_scheme: [ 'MLST_Scheme_1', 'mlst_scheme_1' ],
+        mlst_2_scheme: [ 'MLST_Scheme_2', 'mlst_scheme_2' ],
+        beta_amr:      [ 'GAMMA_Beta_Lactam_Resistance_Genes', 'beta_lactam_resistance_genes' ],
+        other_amr:     [ 'GAMMA_Other_AR_Genes', 'other_ar_genes' ],
+        plasmids:      [ 'Plasmid_Incompatibility_Replicons','plasmid_incompatibility_replicons' ],
+        vir_genes:     [ 'Hypervirulence_Genes', 'hypervirulence_genes' ],
+    ]
+
+    def results = [ id: row.containsKey('ID') ? row.ID : row[row.keySet().iterator().next()] ]
+    cols_key.each{ key, value -> col = value.findAll{ row.containsKey( it ) }
+                                 results[key] = row[col[0]] ? row[col[0]].replaceAll(',',';').replaceAll(' ','_') : null  }
+
+    results.id = results.id.replaceAll(/-WA.*/, '')
+    results.id =  extractId(results.id, /WA\d{7}/) 
+    results.id = extractId(results.id, /\d{4}JQ-\d{5}/)
+
+    return results
 }
 
 def selectFastqs(row){
