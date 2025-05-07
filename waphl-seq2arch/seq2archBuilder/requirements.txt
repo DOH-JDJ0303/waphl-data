@@ -1,0 +1,8 @@
+pandas
+#time
+pyyaml
+#subprocess
+boto3
+botocore
+argparse
+datetime

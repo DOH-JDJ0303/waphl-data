@@ -1,0 +1,5 @@
+waphl-seq2arch/seq2archBuilder/*.json
+waphl-seq2arch/seq2archBuilder/*.log
+waphl-seq2arch/*/config.csv
+waphl-seq2arch/seq2archBuilder/notes.txt
+waphl-seq2arch/seq2archBuilder/csv_to_dict.py
