@@ -1,0 +1,29 @@
+General Guide to Creating a Seq2arch docker image
+
+*For Molecular Epi* please see [README]() for modifiying Seqera Cloud archiving script 
+
+1. Gather various IDs from Seqera Cloud:
+
+    a. Open the token tab on Seqera Cloud
+
+    ![](image.png)
+
+    b. Generate a new access token (or use an existing one if available). Make sure to have the access token locally
+
+
+1. Gather relevant IDs from Seqera Cloud for GitHub Secrets
+    a. Go to AWS Secrets Manager > Secrets > Store a new secret
+    b. Choose secret type > Other type of secret
+    c. For the following, enter in the key and your values:
+        i.tower_access_token
+
+
+
+__You should not need to edit the Dockerfile itself, but you may need to edit the following 5 files that get pulled in to the Dockerfile:__
+1. profiles.py
+2. clean_seqera.py
+3. lambda_function.py
+4. run_clean_seqera.sh
+5. run_clean_seqera_dryrun.sh
+
+

@@ -30,7 +30,6 @@ parser.add_argument('--keep-days', dest = "days", default=None, type=int, help="
 parser.add_argument('--dry-run', dest = "dr",  action="store_true", help="shows what runs would be remove, but does not remove them" )
 parser.add_argument('--force-archive', dest = "fa",  action="store_true", help="archive dev workspace runs which are not archived by default" )
 parser.add_argument('--archive-bucket', dest = "ab",  default="glacier-waphl-seqera", help="s3 bucket where files will get archived" )
-parser.add_argument('--keep_recent', dest = "recent",  default=None,type=int, help="Keep X# of recent runs for all workflows included" )
 
 
 args = parser.parse_args() 
@@ -44,7 +43,6 @@ remove_tags = args.rmtags
 days = args.days
 dryrun = args.dr
 archive = args.fa
-recent = args.recent
 s3_glacier_bucket = args.ab
 
 # Set the automated version of this to always archive
@@ -462,8 +460,6 @@ def find_differences(string1: str, string2: str):
     return differences
 
 
-
-
 if __name__ == "__main__":
     # Loop over pages of pipeline runs.
     # The loop continues as long as the cleaned version of the 4th line of the query
@@ -506,36 +502,6 @@ if __name__ == "__main__":
         # that contain *ALL* tags in provided list of tags
         norm_df["tags_check"] = norm_df["Labels"].apply(lambda label: check_for_tags(label, remove_tags))
         norm_df = norm_df.loc[~norm_df["tags_check"]]
-    if recent:
-        new_df = pd.DataFrame(columns=norm_df.columns)
-        if workflow:
-            if type(workflow) is str:
-                new_df = norm_df.copy()
-                new_df = new_df[new_df["Project_Name"] == workflow].iloc[recent:]
-                pass
-            else:
-                wf_dict = {}
-                for wf in workflow:
-                    cp = norm_df.copy()
-                    cp = cp[cp["Project_Name"] == wf]
-                    cp = cp.iloc[recent:]
-                    wf_dict[wf] = cp
-                    pass
-                for key in wf_dict.keys():
-
-                    new_df = pd.concat([new_df, wf_dict[key]], ignore_index=True)
-        
-        else:
-            workflows = norm_df["Project_Name"].unique()
-            wf_dict = {}
-            for wf in workflows:
-                cp = norm_df.copy()
-                cp = cp[cp["Project_Name"] == wf]
-                wf_dict[wf] = cp.iloc[recent:]
-                for key in wf_dict.keys():
-                    new_df = pd.concat([new_df, wf_dict[key]], ignore_index=True)
-        
-        norm_df = new_df
 
 
     ids_to_remove = norm_df["ID"].tolist()
