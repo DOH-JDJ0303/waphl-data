@@ -1,6 +1,5 @@
 General Guide to Creating a Seq2arch docker image
 
-*For Molecular Epi* please see [README]() for modifiying Seqera Cloud archiving script 
 
 1. Gather various IDs from Seqera Cloud:
 

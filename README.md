@@ -1,5 +1,7 @@
 # waphl-data General Lambda Build Guide
 
+For Molecular Epi* please see [README](https://github.com/DOH-JDJ0303/waphl-data/blob/archive_seqera/waphl-seq2arch/seq2archBuilder/README) for modifiying Seqera Cloud archiving script 
+
 ### Table of Contents
 1. [Enter into directory with relevant Dockerfile](#enter-into-directory-with-dockerfile-for-lambda-function-you-wish-to-edit)
 2. [Build the Image](#build-the-image)
@@ -44,7 +46,7 @@ curl "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ## Host Image on AWS ECR
 Login to AWS ECR
 ```
-aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 398869308272.dkr.ecr.us-west-2.amazonaws.com
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com
 ```
 
 *If* a repository does not exist yet for your tool, then you will need to create a repository
@@ -66,7 +68,7 @@ docker push <AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<
 
 ## Create lambda function
 ```
-aws lambda create-function --function-name <repository_name> --package-type Image --code ImageUri=<AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version> --role arn:aws:iam::<AWS_Account_ID>:role/generalLambdaRole --region us-west-2
+aws lambda create-function --function-name <repository_name> --package-type Image --code ImageUri=<AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version> --role arn:aws:iam::<>:role/generalLambdaRole --region us-west-2
 ```
 <br>
 
