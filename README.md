@@ -55,18 +55,18 @@ aws ecr create-repository --repository-name <repository_name> --region us-west-2
 
 Tag image for hosting on aws
 ```
-docker tag <repository_name>:<version> 398869308272.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version>
+docker tag <repository_name>:<version> <AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version>
 ```
 
 Push docker image to AWS
 ```
-docker push 398869308272.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version>
+docker push <AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version>
 ```
 <br>
 
 ## Create lambda function
 ```
-aws lambda create-function --function-name <repository_name> --package-type Image --code ImageUri=398869308272.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version> --role arn:aws:iam::398869308272:role/generalLambdaRole --region us-west-2
+aws lambda create-function --function-name <repository_name> --package-type Image --code ImageUri=<AWS_Account_ID>.dkr.ecr.us-west-2.amazonaws.com/<repository_name>:<version> --role arn:aws:iam::<AWS_Account_ID>:role/generalLambdaRole --region us-west-2
 ```
 <br>
 
