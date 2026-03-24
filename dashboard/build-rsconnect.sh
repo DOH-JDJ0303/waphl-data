@@ -1,11 +1,12 @@
+set -e
+
 rm -rf dashboard-build
 
 # Copy dashboard files
 mkdir -p dashboard-build
-cp -r waphl-data/dashboard/. dashboard-build/
-
-# Install waphl-data as a package into the build directory
-pip install waphl-data/ --target dashboard-build/
+cp -r waphl-data/src/ waphl-data/dashboard/. dashboard-build/
+cat waphl-data/pyproject.toml | grep -Ev 'firecloud|google' | sed 's/requires = \["setuptools[^"]*"\]/requires = ["setuptools"]/' > dashboard-build/pyproject.toml
+echo '.' >> dashboard-build/requirements.txt
 
 rsconnect \
     deploy streamlit \

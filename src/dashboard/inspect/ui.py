@@ -234,36 +234,37 @@ def results_metadata():
 
 def render_results():
     df_inspect = st.session_state.get('df_inspect', pd.DataFrame())
-    if not df_inspect.empty:
-        for c in ("accept", "reject"):
-            if c not in df_inspect.columns:
-                df_inspect[c] = False
+    if df_inspect.empty:
+        st.error("No files")
+        return
+    for c in ("accept", "reject"):
+        if c not in df_inspect.columns:
+            df_inspect[c] = False
         
-        # Reorder columns with accept/reject first
-        first = ["accept", "reject"]
-        df_inspect = df_inspect[first + [c for c in df_inspect.columns if c not in first]]
+    # Reorder columns with accept/reject first
+    first = ["accept", "reject"]
+    df_inspect = df_inspect[first + [c for c in df_inspect.columns if c not in first]]
+    
+    df_edited = st.data_editor(
+        df_inspect,
+        column_config={
+            col: st.column_config.Column(disabled=True)
+            for col in df_inspect.columns
+            if col not in ["accept", "reject"]
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor",
+    )
 
-
-        df_edited = st.data_editor(
-            df_inspect,
-            column_config={
-                col: st.column_config.Column(disabled=True)
-                for col in df_inspect.columns
-                if col not in ["accept", "reject"]
-            },
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor",
-        )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Submit"):
-                st.session_state.submit_status = True
-                st.session_state.df_edited = df_edited
-        with col2:
-            if st.button("Cancel"):
-                st.session_state.submit_status = False
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Submit"):
+            st.session_state.submit_status = True
+            st.session_state.df_edited = df_edited
+    with col2:
+        if st.button("Cancel"):
+            st.session_state.submit_status = False
 
 def queue_results():
     df_queue = st.session_state.get('df_queue', pd.DataFrame())

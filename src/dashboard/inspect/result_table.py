@@ -21,7 +21,7 @@ BASE_COLS = ["accept", "reject", "id_alt", "run", "workflow_alt"]
 # ---------- CONFIG LOADING ----------
 def select_scheme() -> Dict[str, Any]:
     """Load the single JSON scheme matching `workflow` from schemes/."""
-    workflow = st.session_state.get("workflow")
+    workflow = st.session_state.get("inspect_workflow")
     if workflow is None:
         st.error("No workflow selected")
         return
@@ -160,7 +160,7 @@ def build_rows(
     summary_cols: Dict,
     file_types: List[str],
     workflow: str,
-    df_queue: None,
+    df_to_process: None,
 ) -> List[Dict[str, Any]]:
     """
     Build one row per sample; if multiple assemblies exist, make one row per assembly.
@@ -252,7 +252,7 @@ def build_rows(
         sample_files, global_files = wsf.process_vaper(sample_files, global_files)
         summary_filter_cols = summary_filter_cols + ['reference']
     if workflow == 'mycosnp':
-        sample_files, global_files = wsf.process_mycosnp(sample_files, global_files, df_queue)
+        sample_files, global_files = wsf.process_mycosnp(sample_files, global_files, df_to_process)
 
     final_rows = []
     for key, sfiles in sample_files.items():
@@ -324,18 +324,18 @@ def order_columns(df: pd.DataFrame, summary_cols_dict: Dict[str, str]) -> pd.Dat
 
 # ---------- MAIN ----------
 def main():
-    workflow = st.session_state.get("workflow")
-    df_queue = st.session_state.get("df_queue")
+    workflow = st.session_state.get("inspect_workflow")
+    df_to_process = st.session_state.get("df_to_process", pd.DataFrame())
 
-    if workflow is None or df_queue is None:
+    if workflow is None or df_to_process.empty:
         return
     
     select_scheme()
     summary_cols, file_types, qc_criteria = extract_scheme_info()
 
-    records = df_queue.to_dict("records")
+    records = df_to_process.to_dict("records")
     global_files, sample_files, superceded_files = process_records(records)
-    rows = build_rows(global_files, sample_files, summary_cols, file_types, workflow, df_queue)
+    rows = build_rows(global_files, sample_files, summary_cols, file_types, workflow, df_to_process)
 
     df_out = pd.DataFrame(rows)
     if df_out.empty:
