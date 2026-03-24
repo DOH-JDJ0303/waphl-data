@@ -1,0 +1,442 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Workflow for transferring target bioinformatic analysis files from one S3 bucket to another, in a structured format.
+
+Parameters:
+  SourceBucket:
+    Type: String
+    Description: Source bucket
+  DestBucket:
+    Type: String
+    Description: Destination bucket
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: Subnets in at least two Availability Zones
+  SecurityGroupIds:
+    Type: CommaDelimitedList
+    Description: Security groups with outbound access
+
+  #========================================================#
+  #                    AWS TO AWS WORKFLOW                 #
+  #========================================================#
+  GatherFunction:
+    Type: String
+    Default: prod2res-gather
+    Description: Lambda function for gathering workflow files to transfer
+  GatherFunctionImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Image tag to use for gather function
+  CopyFunction:
+    Type: String
+    Default: prod2res-cp
+    Description: Lambda function that copies selected files from source to destination
+  CopyFunctionImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Image tag to use for copy function
+  
+  #========================================================#
+  #                    TERRA TO AWS WORKFLOW               #
+  #========================================================#
+  TerraGatherFunction:
+    Type: String
+    Default: prod2res-terra-gather
+    Description: Lambda function for gathering runs needing to be tranferred from Terra.bio
+  TerraGatherFunctionImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Image tag to use for Terra gather function
+  TerraCopyBatch:
+    Type: String
+    Default: prod2res-terra-cp
+    Description: EC2 Batch script for copying files from Terra.bio to an S3 bucket
+  TerraCopyBatchImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Image tag to use for Terra copy function
+  TerraProject:
+    Type: String
+    Description: Google Cloud project name used for Terra.bio account
+  TerraWorkspaces:
+    Type: String
+    Description: Comma-separated list of Terra.bio workspaces (no spaces). E.g., workspace1,workspace2,...
+  GoogleCloudCredentials:
+    Type: String
+    Description: URI path to JSON file containing Google Cloud Storage credentials for the Terra.bio account in DestBucket
+
+Resources:
+
+  #========================================================#
+  #                    AWS TO AWS WORKFLOW                 #
+  #========================================================#
+  GatherDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-gatherDLQ"
+
+  GatherQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-gather"
+      VisibilityTimeout: 920
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt GatherDLQ.Arn
+        maxReceiveCount: 3
+
+  GatherFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref GatherFunction
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Ref GatherFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${SourceBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${SourceBucket}/*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:HeadObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${DestBucket}"
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt GatherQueue.Arn
+
+  GatherFunctionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref GatherFunction
+      PackageType: Image
+      Role: !GetAtt GatherFunctionRole.Arn
+      Code:
+        ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${GatherFunction}:${GatherFunctionImageTag}"
+      MemorySize: 1280
+      Timeout: 900
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref GatherQueue
+          DEST_BUCKET: !Ref DestBucket
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GatherFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3EventRule.Arn
+
+  S3EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: waphl-prod2res
+      Description: Triggers gather function when objects matching the specified suffix are created in the specified bucket
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Sub "${SourceBucket}"
+          object:
+            key:
+              - suffix: "Phoenix_Summary.tsv"
+              - suffix: "VAPER-summary.csv"
+              - suffix: "pre-mycosnp-summary.csv"
+              - suffix: "fasttree_phylogeny.nh"
+      Targets:
+        - Arn: !GetAtt GatherFunctionLambda.Arn
+          Id: LambdaTarget
+
+  CopyFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref CopyFunction
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Ref CopyFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt GatherQueue.Arn
+
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${SourceBucket}/*"
+                  - !Sub "arn:aws:s3:::${DestBucket}/*"
+
+  CopyFunctionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref CopyFunction
+      PackageType: Image
+      Role: !GetAtt CopyFunctionRole.Arn
+      Code:
+        ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${CopyFunction}:${CopyFunctionImageTag}"
+      MemorySize: 1280
+      Timeout: 900
+      Environment:
+        Variables:
+          DEST_BUCKET: !Ref DestBucket
+  
+  CopyFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      EventSourceArn: !GetAtt GatherQueue.Arn
+      FunctionName: !Ref CopyFunctionLambda
+      Enabled: true
+
+  #========================================================#
+  #                   TERRA TO AWS WORKFLOW                #
+  #========================================================#
+  BatchServiceRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: !Sub "${TerraCopyBatch}_batch-service-role"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: batch.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+
+  TerraBatchComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Sub "${TerraCopyBatch}_compute"
+      Type: MANAGED
+      State: ENABLED
+      ServiceRole: !GetAtt BatchServiceRole.Arn
+      ComputeResources:
+        Type: FARGATE_SPOT
+        MaxvCpus: 16
+        Subnets: !Ref SubnetIds
+        SecurityGroupIds: !Ref SecurityGroupIds
+
+  TerraCopyBatchQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub "${TerraCopyBatch}_queue"
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref TerraBatchComputeEnvironment
+
+  TerraCopyBatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${TerraCopyBatch}_role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TerraCopyBatchAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${DestBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${TerraCopyBatch}"
+
+  TerraCopyBatchExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${TerraCopyBatch}_execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      
+  TerraCopyLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/batch/${TerraCopyBatch}"
+      RetentionInDays: 14
+
+  TerraCopyBatchJob:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      JobDefinitionName: !Ref TerraCopyBatch
+      Type: container
+      PlatformCapabilities: [FARGATE]
+      ContainerProperties:
+        Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${TerraCopyBatch}:${TerraCopyBatchImageTag}"
+        ResourceRequirements:
+          - Type: VCPU
+            Value: "2"
+          - Type: MEMORY
+            Value: "4096"
+        Environment:
+          - Name: DEST_BUCKET
+            Value: !Ref DestBucket
+          - Name: GOOGLE_CLOUD_CREDENTIALS
+            Value: !Ref GoogleCloudCredentials
+        JobRoleArn: !GetAtt TerraCopyBatchRole.Arn
+        ExecutionRoleArn: !GetAtt TerraCopyBatchExecutionRole.Arn
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref TerraCopyLogGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: terra-copy
+        NetworkConfiguration:
+          AssignPublicIp: ENABLED
+
+  TerraGatherCronRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${TerraGatherFunction}_cron"
+      Description: Triggers TerraGatherFunction every 2 hours
+      ScheduleExpression: rate(2 hours)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt TerraGatherFunctionLambda.Arn
+          Id: TerraGatherLambdaTarget
+
+  TerraGatherInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TerraGatherFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TerraGatherCronRule.Arn
+
+  TerraGatherFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref TerraGatherFunction
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Ref TerraGatherFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - batch:SubmitJob
+                Resource:
+                  - !Sub "arn:aws:batch:${AWS::Region}:${AWS::AccountId}:job-definition/${TerraCopyBatch}:*"
+                  - !Sub "arn:aws:batch:${AWS::Region}:${AWS::AccountId}:job-queue/${TerraCopyBatch}_queue"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${DestBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:HeadObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+
+
+  TerraGatherFunctionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref TerraGatherFunction
+      PackageType: Image
+      Role: !GetAtt TerraGatherFunctionRole.Arn
+      Code:
+        ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${TerraGatherFunction}:${TerraGatherFunctionImageTag}"
+      MemorySize: 1280
+      Timeout: 900
+      Environment:
+        Variables:
+          DEST_BUCKET: !Ref DestBucket
+          JOB_DEFINITION: !Ref TerraCopyBatchJob
+          JOB_QUEUE: !Ref TerraCopyBatchQueue
+          GOOGLE_CLOUD_CREDENTIALS: !Ref GoogleCloudCredentials
+          TERRA_WORKSPACES: !Ref TerraWorkspaces
+          TERRA_PROJECT: !Ref TerraProject

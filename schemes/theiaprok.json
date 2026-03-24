@@ -1,0 +1,39 @@
+{
+  "scheme": "theiaprok",
+  "workflow": "theiaprok",
+  "trigger": null,
+  "summary_columns": {
+    "id": "id",
+    "qc_status": "aa_qc_check",
+    "read_depth": "est_coverage_clean",
+    "genome_length": "assembly_length",
+    "number_contigs": "number_contigs",
+    "gc_ratio": "quast_gc_percent",
+    "species": "gambit_predicted_taxon",
+    "subtype_1": "ts_mlst_predicted_st"
+  },
+  "qc_criteria": [
+    {
+      "column": "aa_qc_check",
+      "equals": "PASS"
+    }
+  ],
+  "reportable_files": [
+    {
+      "terra_column": "terra_table",
+      "type": "summary"
+    },
+    {
+      "terra_column": "assembly_fasta",
+      "type": "assembly"
+    },
+    {
+      "terra_column": "read1",
+      "type": "raw_reads"
+    },
+    {
+      "terra_column": "read2",
+      "type": "raw_reads"
+    }
+  ]
+}

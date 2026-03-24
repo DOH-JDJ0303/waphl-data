@@ -1,0 +1,11 @@
+# =============================================================================
+# Dockerfile.prod2res-gather — Prod2Res Gather AWS Lambda Function
+# Build: docker build -f Dockerfile.prod2res-gather -t prod2res-gather .
+# =============================================================================
+
+FROM waphl-data-lambda:latest
+
+# -----------------------------------------------------------------------------
+# Point to the handler inside the installed package.
+# -----------------------------------------------------------------------------
+CMD ["prod2res.gather.lambda_function.handler"]

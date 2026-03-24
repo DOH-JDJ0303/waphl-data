@@ -1,0 +1,30 @@
+# =============================================================================
+# Dockerfile.streamlit — Streamlit dashboard
+# Build: docker build -f Dockerfile.streamlit -t waphl-data_dashboard .
+# Run:   docker run -p 8501:8501 waphl-dashboard
+# =============================================================================
+
+FROM waphl-data-base:latest
+
+# Switch to root to install additional deps if needed
+USER root
+
+# -----------------------------------------------------------------------------
+# Streamlit config — disable telemetry, set default server settings
+# -----------------------------------------------------------------------------
+RUN mkdir -p /home/appuser/.streamlit
+COPY --chown=appuser:appuser deploy/streamlit/config.toml /home/appuser/.streamlit/config.toml
+
+# -----------------------------------------------------------------------------
+# App source
+# -----------------------------------------------------------------------------
+USER appuser
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+ENTRYPOINT ["streamlit", "run", "dashboard/app.py", \
+            "--server.address=0.0.0.0", \
+            "--server.port=8501"]
