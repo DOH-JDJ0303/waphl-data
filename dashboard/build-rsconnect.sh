@@ -30,12 +30,14 @@ GUID=$(rsconnect content search --name 'WAPHL Bioinformatics Results' 2>/dev/nul
 if [ -n "$GUID" ]; then
     echo "Found existing deployment (GUID: $GUID) — redeploying..."
     rsconnect redeploy streamlit \
+        --no-cache \
         --guid "$GUID" \
         "${ENV_FLAGS[@]}" \
         dashboard-build/
 else
     echo "No existing deployment found — deploying for the first time..."
     rsconnect deploy streamlit \
+        --no-cache \
         -t 'WAPHL Bioinformatics Results' \
         "${ENV_FLAGS[@]}" \
         dashboard-build/
