@@ -20,21 +20,21 @@ import boto3
 import pandas as pd
 from firecloud import api as fapi
 from dateutil import parser
-from botocore.exceptions import ClientError
 
 from shared import io_ops, data_processing
-
+from shared.aws_ops import log_print
+from prod2res_terra.utils import set_google_credentials
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-DEST_BUCKET = os.environ['DEST_BUCKET']
-GCRED_URI = os.environ['GOOGLE_CLOUD_CREDENTIALS']
-JOB_QUEUE = os.environ['JOB_QUEUE']
-JOB_DEFINITION = os.environ['JOB_DEFINITION']
-TERRA_WORKSPACES = os.environ['TERRA_WORKSPACES'].split(',')
-TERRA_PROJECT = os.environ['TERRA_PROJECT']
+GOOGLE_CLOUD_CREDENTIALS = os.environ.get('GOOGLE_CLOUD_CREDENTIALS')
+DEST_BUCKET              = os.environ.get('DEST_BUCKET')
+JOB_QUEUE                = os.environ.get('JOB_QUEUE')
+JOB_DEFINITION           = os.environ.get('JOB_DEFINITION')
+TERRA_WORKSPACES         = os.environ.get('TERRA_WORKSPACES', '').split(',')
+TERRA_PROJECT            = os.environ.get('TERRA_PROJECT')
 
 # Limit number of new batch jobs submitted per run
 MAX_NEW_RUNS = 3
@@ -55,41 +55,6 @@ REQUIRED_COLS = ['project', 'workspace', 'entity_type', 'workflow_name',
 AWS_SESSION = boto3.session.Session()
 S3 = AWS_SESSION.client("s3")
 BATCH = AWS_SESSION.client("batch")
-
-
-# ============================================================================
-# Logging
-# ============================================================================
-
-def log_print(msg):
-    """Print with flush for better real-time logging in containerized environments."""
-    print(str(msg), flush=True)
-
-
-# ============================================================================
-# Google Cloud Setup
-# ============================================================================
-
-def parse_s3_uri(s3_uri):
-    """Parse S3 URI into bucket and key components."""
-    parsed = urllib.parse.urlparse(s3_uri)
-    bucket = parsed.netloc
-    key = re.sub(r'/{2,}', '/', parsed.path.lstrip('/'))
-    return bucket, key
-
-
-def set_google_credentials():
-    """Download and configure Google Cloud credentials from S3."""
-    try:
-        bucket, key = parse_s3_uri(GCRED_URI)
-        gcred_local = '/tmp/application_default_credentials.json'
-        S3.download_file(bucket, key, gcred_local)
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcred_local
-        log_print("Google Cloud credentials configured successfully.")
-    except Exception as e:
-        log_print(f"ERROR: Failed to set Google credentials: {e}")
-        raise
-
 
 # ============================================================================
 # Workflow Filtering
@@ -265,7 +230,7 @@ def submit_batch_job(project, workspace, submission_id, workflow, entity_type, d
                     {'name': 'TERRA_SUBMISSIONENTITY', 'value': str(entity_type)},
                     {'name': 'TERRA_SUBMISSIONTIME', 'value': str(date_str)},
                     {'name': 'DEST_BUCKET', 'value': str(DEST_BUCKET)},
-                    {'name': 'GCS_CREDENTIALS_URI', 'value': str(GCRED_URI)},
+                    {'name': 'GOOGLE_CLOUD_CREDENTIALS', 'value': str(GOOGLE_CLOUD_CREDENTIALS)},
                 ]
             }
         )
@@ -335,9 +300,11 @@ def process_workspace(workspace):
     cache = gather_workspace_cache(DEST_BUCKET, TERRA_PROJECT, workspace)
     if not cache.empty:
         cached_submissions = set(cache["submission_id"].tolist())
-        cached_incomplete = set(cache[~cache["transfer_status"].isin(["complete", "partial", "skipped"])]["submission_id"].tolist())
+        cached_terminal = set(cache[cache["transfer_status"].isin(['complete', 'partial', 'skipped'])]["submission_id"].tolist())
+        cached_incomplete = cached_submissions - cached_terminal
     else:
         cached_submissions = set()
+        cached_terminal = set()
         cached_incomplete = set()
     
     # Determine which runs to process
@@ -345,10 +312,10 @@ def process_workspace(workspace):
     new_cache_entries = []
     
     for sub_id, meta in eligible_runs.items():
-        # Skip if already in cache and complete/queued
-        if sub_id in cached_submissions and sub_id not in cached_incomplete:
+        # If already complete/partial in cache, skip — no update needed
+        if sub_id in cached_terminal:
             continue
-        
+
         # Determine status
         if sub_id in latest_runs:
             if len(new_runs) < MAX_NEW_RUNS:
@@ -357,7 +324,11 @@ def process_workspace(workspace):
             else:
                 status = 'queue'
         else:
-            status = 'skipped'
+            # Newer run exists for this entity type — mark incomplete cached entry as skipped
+            if sub_id in cached_incomplete:
+                status = 'skipped'
+            else:
+                continue  # Not latest and not in cache yet — nothing to do
         
         new_cache_entries.append({
             'project': TERRA_PROJECT,

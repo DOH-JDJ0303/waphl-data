@@ -41,7 +41,7 @@ elif submodule == "Terra.bio":
 
         p2rt_job_queue      = st.text_input("Prod2Res Terra Job Queue", value=utils.env("P2RT_JOB_QUEUE", ""))
         p2rt_job_definition = st.text_input("Prod2Res Terra Job Definition", value=utils.env("P2RT_JOB_DEFINITION", ""))
-        gcs_credentials_uri = st.text_input("Google Cloud Credentials (URI)", value=utils.env("GCS_CREDENTIALS_URI", ""))
+        gcs_credentials_uri = st.text_input("Google Cloud Credentials (URI)", value=utils.env("GOOGLE_CLOUD_CREDENTIALS", ""))
         terra_project       = st.text_input("Terra Project", value=utils.env("TERRA_PROJECT", ""))
         terra_workspaces    = st.text_input("Terra Workspaces", value=utils.env("TERRA_WORKSPACES", ""))
 

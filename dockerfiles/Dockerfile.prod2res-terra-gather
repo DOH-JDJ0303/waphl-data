@@ -8,4 +8,4 @@ FROM waphl-data-lambda:latest
 # -----------------------------------------------------------------------------
 # Point to the handler inside the installed package.
 # -----------------------------------------------------------------------------
-CMD ["prod2res_terra.cp.lambda_function.handler"]
+CMD ["prod2res_terra.gather.lambda_function.handler"]

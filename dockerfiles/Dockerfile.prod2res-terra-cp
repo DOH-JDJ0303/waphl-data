@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir awscli
 # -----------------------------------------------------------------------------
 USER appuser
 WORKDIR /app
-CMD ["python", "-m", "waphl_data.prod2res_terra.cp.core"]
+CMD ["python", "-m", "prod2res_terra.cp.core"]
