@@ -233,6 +233,12 @@ def read_delta_as_pandas(uri: str, filters: Optional[Sequence[tuple]] = None) ->
         return dt.to_pandas(filters=filters)
     return dt.to_pandas()
 
+def delta_partition_values(uri, partition_col, storage_options=None):
+    dt = DeltaTable(uri, storage_options=storage_options)
+    files = dt.get_add_actions(flatten=True)
+    col = f"partition.{partition_col}"
+    return sorted(set(files[col].to_pylist()))
+
 
 # ----------------
 # S3 List Helpers

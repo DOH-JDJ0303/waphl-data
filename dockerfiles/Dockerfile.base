@@ -31,13 +31,14 @@ WORKDIR /app
 # -----------------------------------------------------------------------------
 # Copy package definition first (layer cache: only re-runs if toml changes)
 # -----------------------------------------------------------------------------
-COPY pyproject.toml .
-COPY . .
+COPY pyproject.toml /build/
+COPY . /build/
+COPY ./schemes/ /app/schemes/
 
 # -----------------------------------------------------------------------------
 # Install base package
 # -----------------------------------------------------------------------------
-RUN pip install --no-cache-dir --no-build-isolation .
+RUN pip install --no-cache-dir --no-build-isolation /build/ && rm -rf /build
 
 # -----------------------------------------------------------------------------
 # Non-root user for security

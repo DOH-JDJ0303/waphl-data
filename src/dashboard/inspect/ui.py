@@ -173,13 +173,10 @@ def getting_started():
     with st.container(border=True):
         st.subheader("Getting Started")
         st.markdown("##### Select a workflow")
-        workflows = [
-            d.replace("workflow_alt=", "")
-            for d in io_ops.list_prefix_dirs(source_bucket, FILES_PREFIX)
-            if "workflow_alt" in d
-        ]
+        source_uri = f"s3://{source_bucket}/{FILES_PREFIX}"
+        workflows = io_ops.delta_partition_values(source_uri, "workflow_alt")
         workflow = st.selectbox(
-            f"Use the drop-down menu to select a workflow (source: s3://{source_bucket}/{FILES_PREFIX})",
+            f"Use the drop-down menu to select a workflow (source: {source_uri})",
             [""] + workflows,
         )
         if workflow:

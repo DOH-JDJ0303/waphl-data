@@ -19,9 +19,6 @@ DEST_BUCKET = os.environ.get("DEST_BUCKET")
 QUEUE_URL   = os.environ.get("QUEUE_URL")
 BATCH_SIZE = 20
 
-if not DEST_BUCKET or not QUEUE_URL:
-    sys.exit("ENV error: DEST_BUCKET and QUEUE_URL must be set")
-
 SESSION = boto3.session.Session()
 S3      = SESSION.client("s3")
 

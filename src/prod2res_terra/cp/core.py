@@ -260,10 +260,9 @@ def load_workflow_schema():
     """
     log_print(f"Loading schema for workflow: {TERRA_WORKFLOW}")
     
-    scheme_dir = Path(__file__).resolve().parent / "schemes"
+    scheme_dir = Path("schemes")
     if not scheme_dir.is_dir():
-        log_print(f"WARNING: Schema directory not found: {scheme_dir}")
-        return {}
+        raise ValueError(f"ERROR: Schema directory not found: {scheme_dir}")
     
     # Find matching schema file
     workflow_name = (TERRA_WORKFLOW or "").lower()
@@ -564,6 +563,8 @@ def transfer_files(file_metadata_list):
             key_cols=FILES_TABLE_KEYS,
             partition_by=FILES_TABLE_PARTITIONS
             )
+        
+        log_print(f"Written {len(df):,} records to s3://{DEST_BUCKET}/{FILES_PREFIX}")
         
     return success_list, failure_list
 
