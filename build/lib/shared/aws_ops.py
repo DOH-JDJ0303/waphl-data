@@ -12,7 +12,10 @@ def parse_uri(uri):
     """Parse GCS or S3 URI into bucket and key/path components."""
     parsed = urllib.parse.urlparse(uri)
     bucket = parsed.netloc
-    path = re.sub(r'/{2,}', '/', parsed.path.lstrip('/'))
+    path = parsed.path
+    if isinstance(path, bytes):
+        path = path.decode('utf-8', 'replace')
+    path = re.sub(r'/{2,}', '/', path.lstrip('/'))
     return bucket, path
 
 def s3_file_exists(bucket, key):
