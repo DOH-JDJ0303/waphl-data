@@ -16,5 +16,7 @@ dependencies = [
     "tqdm>=4.67",
     "jsonschema>=4.23",
     "firecloud>=0.16.39",
-    "google-cloud-storage>=2.18"
+    "google-cloud-storage>=2.18",
+    "tornado"
+
 ]
