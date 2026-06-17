@@ -1,0 +1,44 @@
+{
+  "scheme": "mycosnp",
+  "workflow": "mycosnp",
+  "trigger": "manifest.csv",
+  "summary_columns": {
+    "id": "Sample",
+    "qc_status": "QC_Status",
+    "qc_reason": "QC_Reason",
+    "read_depth": "Avg_Depth_Coverage",
+    "genome_length": "Sample_Genome_Length",
+    "gc_ratio": "Sample_GC",
+    "species": "Predicted_Taxa",
+    "subtype_1": "Predicted_Subtype",
+    "subtype_1_confidence": "Subtype_ANI"
+  },
+  "qc_criteria": [
+    {
+      "column": "QC_Status",
+      "equals": "PASS"
+    }
+  ],
+  "reportable_files": [
+    {
+      "pattern": "fasttree_phylogeny.nh",
+      "type": "tree"
+    },
+    {
+      "pattern": "*/snpdists/combined.tsv",
+      "type": "snp_matrix"
+    },
+    {
+      "pattern": "vcf-to-fasta.fasta",
+      "type": "assembly"
+    },
+    {
+      "pattern": "multiqc_report.html",
+      "type": "log"
+    },
+    {
+      "pattern": "pre-mycosnp-summary.csv",
+      "type": "summary"
+    }
+  ]
+}

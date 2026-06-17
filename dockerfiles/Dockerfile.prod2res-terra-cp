@@ -1,0 +1,20 @@
+# =============================================================================
+# Dockerfile.prod2res-terra-cp — Prod2Res Terra Copy AWS Batch job
+# Build: docker build -f Dockerfile.prod2res-terra-cp -t prod2res-terra-cp .
+# =============================================================================
+
+FROM waphl-data:latest
+
+USER root
+
+# -----------------------------------------------------------------------------
+# AWS CLI
+# -----------------------------------------------------------------------------
+RUN pip install --no-cache-dir awscli
+
+# -----------------------------------------------------------------------------
+# Specify which script to execute
+# -----------------------------------------------------------------------------
+USER appuser
+WORKDIR /app
+CMD ["python", "-m", "prod2res_terra.cp.core"]

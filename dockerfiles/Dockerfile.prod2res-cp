@@ -1,0 +1,11 @@
+# =============================================================================
+# Dockerfile.prod2res-cp — Prod2Res Copy AWS Lambda Function
+# Build: docker build -f Dockerfile.prod2res-cp -t prod2res-cp .
+# =============================================================================
+
+FROM waphl-data-lambda:latest
+
+# -----------------------------------------------------------------------------
+# Point to the handler inside the installed package.
+# -----------------------------------------------------------------------------
+CMD ["prod2res.cp.lambda_function.handler"]

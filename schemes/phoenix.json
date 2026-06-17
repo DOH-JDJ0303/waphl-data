@@ -1,0 +1,52 @@
+{
+  "scheme": "phoenix",
+  "workflow": "phoenix",
+  "trigger": "Phoenix_Summary.tsv",
+  "summary_columns": {
+    "id": "ID",
+    "qc_status": "Auto_QC_Outcome",
+    "qc_reason": "Auto_QC_Failure_Reason",
+    "read_depth": "Estimated_Coverage",
+    "genome_length": "Genome_Length",
+    "number_contigs": "#_of_Scaffolds_>500bp",
+    "gc_ratio": "GC_%",
+    "species": "Species",
+    "species_confidence": "Taxa_Confidence",
+    "subtype_1": "MLST_1",
+    "subtype_2": "MLST_2", 
+    "amr_genes_beta_lactam": "GAMMA_Beta_Lactam_Resistance_Genes",
+    "amr_genes_other": "GAMMA_Other_AR_Genes",
+    "plasmid_replicons": "Plasmid_Incompatibility_Replicons",
+    "hypervirulence_Genes": "Hypervirulence_Genes"
+  },
+  "qc_criteria": [
+    {
+      "column": "Auto_QC_Outcome", 
+      "equals": "PASS"
+    }
+  ],
+  "reportable_files": [
+    {
+      "pattern": "execution_report_*",
+      "type": "log"
+    },
+    {
+      "pattern": "*_summaryline.tsv",
+      "type": "summary",
+      "terra_column": "summary_line"
+    },
+    {
+      "pattern": "*.filtered.scaffolds.fa.gz",
+      "type": "assembly",
+      "terra_column": "filtered_scaffolds"
+    },
+    {
+      "terra_column": "read1",
+      "type": "raw_reads"
+    },
+    {
+      "terra_column": "read2",
+      "type": "raw_reads"
+    }
+  ]
+}

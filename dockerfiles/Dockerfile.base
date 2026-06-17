@@ -1,0 +1,47 @@
+# =============================================================================
+# Dockerfile.base — waphl-data base image
+# Used as a template for:
+#   - Dockerfile.dashboard   (streamlit)
+#   - Dockerfile.batch       (AWS Batch scripts)
+# =============================================================================
+
+FROM python:3.11-slim
+
+# -----------------------------------------------------------------------------
+# System dependencies
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Pin setuptools before anything else (required for firecloud legacy build)
+# -----------------------------------------------------------------------------
+RUN pip install --no-cache-dir "setuptools<74" pip --upgrade
+
+# -----------------------------------------------------------------------------
+# Working directory
+# -----------------------------------------------------------------------------
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# Copy package definition first (layer cache: only re-runs if toml changes)
+# -----------------------------------------------------------------------------
+COPY pyproject.toml /build/
+COPY . /build/
+COPY ./schemes/ /app/schemes/
+
+# -----------------------------------------------------------------------------
+# Install base package
+# -----------------------------------------------------------------------------
+RUN pip install --no-cache-dir --no-build-isolation /build/ && rm -rf /build
+
+# -----------------------------------------------------------------------------
+# Non-root user for security
+# -----------------------------------------------------------------------------
+RUN useradd --create-home --shell /bin/bash appuser
+USER appuser

@@ -1,0 +1,36 @@
+{
+  "scheme": "vaper",
+  "workflow": "vaper",
+  "trigger": "VAPER-summary.csv",
+  "summary_columns": {
+    "id": "ID",
+    "qc_status": "ASSEMBLY_QC",
+    "qc_reason": "ASSEMBLY_QC_REASON",
+    "read_depth": "ASSEMBLY_EST_DEPTH",
+    "genome_length": "ASSEMBLY_LENGTH",
+    "genome_fraction": "ASSEMBLY_GEN_FRAC",
+    "gc_ratio": "GC_%",
+    "species": "SPECIES",
+    "segment": "SEGMENT"
+  },
+  "qc_criteria": [
+    {
+      "column": "ASSEMBLY_QC", 
+      "equals": "PASS"
+    }
+  ],
+  "reportable_files": [
+    {
+      "pattern": "multiqc_report.html",
+      "type": "log"
+    },
+    {
+      "pattern": "*.fa.gz",
+      "type": "assembly"
+    },
+    {
+      "pattern": "VAPER-summary.csv",
+      "type": "summary"
+    }
+  ]
+}

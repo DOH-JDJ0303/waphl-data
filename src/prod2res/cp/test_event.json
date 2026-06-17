@@ -1,0 +1,12 @@
+{
+  "Records": [
+    {
+      "messageId": "abc123",
+      "receiptHandle": "...",
+      "body": "[{\"source_bucket\":\"bucket_name\",\"source_key\":\"path/to/target/file\"}]"
+    }
+  ]
+}
+
+
+
