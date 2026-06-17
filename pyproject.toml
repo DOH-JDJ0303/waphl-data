@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "waphl-data"
-version = "2.0.2"
+version = "2.0.4"
 requires-python = ">=3.11"
 dependencies = [
     "streamlit>=1.55",
@@ -16,5 +16,7 @@ dependencies = [
     "tqdm>=4.67",
     "jsonschema>=4.23",
     "firecloud>=0.16.39",
-    "google-cloud-storage>=2.18"
+    "google-cloud-storage>=2.18",
+    "tornado"
+
 ]

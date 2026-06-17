@@ -64,6 +64,25 @@ Parameters:
     Type: String
     Description: URI path to JSON file containing Google Cloud Storage credentials for the Terra.bio account in DestBucket
 
+  #========================================================#
+  #            INTERIM GBA EXPORT (TEMPORARY)             #
+  #========================================================#
+  # NOTE: TEMPORARY stop-gap. Exports a Delta table filtered
+  # to workflow_alt=phoenix into a flat CSV. Expected to be
+  # removed once a permanent reporting pipeline replaces it.
+  InterimGbaFunction:
+    Type: String
+    Default: interim-gba
+    Description: "[TEMPORARY] Lambda function that exports the phoenix Delta table to a CSV"
+  InterimGbaFunctionImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Image tag to use for the interim GBA export function
+  InterimGbaScheduleExpression:
+    Type: String
+    Default: rate(2 hours)
+    Description: "[TEMPORARY] Schedule on which the interim GBA CSV export runs"
+
 Resources:
 
   #========================================================#
@@ -441,3 +460,85 @@ Resources:
           GOOGLE_CLOUD_CREDENTIALS: !Ref GoogleCloudCredentials
           TERRA_WORKSPACES: !Ref TerraWorkspaces
           TERRA_PROJECT: !Ref TerraProject
+
+  #========================================================#
+  #            INTERIM GBA EXPORT (TEMPORARY)             #
+  #========================================================#
+  # NOTE: This entire block is a TEMPORARY solution. It reads
+  # the results Delta table in DestBucket, filters to
+  # workflow_alt=phoenix, and writes a flat CSV back to
+  # DestBucket (tables/gba.csv). Expected to be torn down once
+  # the permanent reporting workflow replaces it. Avoid building
+  # downstream dependencies on this function.
+  InterimGbaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref InterimGbaFunction
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Ref InterimGbaFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              # Read the source Delta table
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${DestBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+              # Write the exported CSV
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${DestBucket}/*"
+
+  InterimGbaFunctionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref InterimGbaFunction
+      PackageType: Image
+      Role: !GetAtt InterimGbaFunctionRole.Arn
+      Code:
+        ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${InterimGbaFunction}:${InterimGbaFunctionImageTag}"
+      MemorySize: 1280
+      Timeout: 900
+      Environment:
+        Variables:
+          # TEMPORARY: exports workflow_alt=phoenix to tables/gba.csv
+          RES_BUCKET: !Ref DestBucket
+          WORKFLOW_ALT_VALUE: phoenix
+          OUTPUT_KEY: tables/gba.csv
+
+  InterimGbaScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${InterimGbaFunction}_cron"
+      Description: "[TEMPORARY] Triggers the interim GBA CSV export on a schedule"
+      ScheduleExpression: !Ref InterimGbaScheduleExpression
+      State: DISABLED
+      Targets:
+        - Arn: !GetAtt InterimGbaFunctionLambda.Arn
+          Id: InterimGbaLambdaTarget
+
+  InterimGbaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InterimGbaFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt InterimGbaScheduleRule.Arn
