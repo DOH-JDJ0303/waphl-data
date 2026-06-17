@@ -3,9 +3,14 @@
 set -e
 
 STACK_VERSION=1.0.9
-# PROD_BUCKET=""
-# RES_BUCKET=""
-# AWS_ECR=""
+PROD_BUCKET=
+RES_BUCKET=
+AWS_ECR=
+SUBNET_IDS=
+SECURITY_GROUP_IDS=
+TERRA_WORKSPACES=
+TERRA_PROJECT=
+
 
 cat <<EOF > parameters-prod2res.json
 [
@@ -23,19 +28,19 @@ cat <<EOF > parameters-prod2res.json
   },
   {
     "ParameterKey": "SubnetIds",
-    "ParameterValue": "subnet-c73c46ec,subnet-6be31313,subnet-433af91e,subnet-615d402a"
+    "ParameterValue": "${SUBNET_IDS}"
   },
   {
     "ParameterKey": "SecurityGroupIds",
-    "ParameterValue": "sg-f59931a8"
+    "ParameterValue": "${SECURITY_GROUP_IDS}"
   },
   {
     "ParameterKey": "TerraWorkspaces",
-    "ParameterValue": "general_bacterial_wgs,hai"
+    "ParameterValue": "${TERRA_WORKSPACES}"
   },
   {
     "ParameterKey": "TerraProject",
-    "ParameterValue": "waphl-covid-billing-1"
+    "ParameterValue": "${TERRA_PROJECT}"
   },
   {
     "ParameterKey": "GatherFunctionImageTag",
@@ -51,6 +56,10 @@ cat <<EOF > parameters-prod2res.json
   },
   {
     "ParameterKey": "TerraCopyBatchImageTag",
+    "ParameterValue": "${STACK_VERSION}"
+  },
+  {
+    "ParameterKey": "InterimGbaFunctionImageTag",
     "ParameterValue": "${STACK_VERSION}"
   }
 ]
@@ -99,6 +108,16 @@ docker build \
     -f dockerfiles/Dockerfile.prod2res-terra-cp .
 docker push ${AWS_ECR}/prod2res-terra-cp:${STACK_VERSION}
 docker push ${AWS_ECR}/prod2res-terra-cp:latest
+
+# ----- Interim-Gba (TEMPORARY) -----
+# TEMPORARY: stop-gap CSV exporter; remove once the permanent
+#            reporting pipeline replaces it.
+docker build \
+    -t ${AWS_ECR}/interim-gba:${STACK_VERSION} \
+    -t ${AWS_ECR}/interim-gba:latest \
+    -f dockerfiles/Dockerfile.interim-gba .
+docker push ${AWS_ECR}/interim-gba:${STACK_VERSION}
+docker push ${AWS_ECR}/interim-gba:latest
 
 cd ../
 
