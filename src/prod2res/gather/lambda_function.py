@@ -43,10 +43,6 @@ def parse_uri(s3_uri: str) -> Tuple[str, str]:
         sys.exit(f"Malformed S3 URI: {s3_uri}")
     return bucket, key
 
-def fastq_columns(fieldnames: Iterable[str]) -> List[str]:
-    """Return all manifest column names that start with 'fastq'."""
-    return [c for c in (fieldnames or []) if c and c.startswith("fastq")]
-
 def check_file(bucket: str, key: str, fail: bool = True, message: bool = True) -> bool:
     if message:
         log_print(f"Checking exists: s3://{bucket}/{key}")
@@ -143,15 +139,10 @@ def load_run_manifest(bucket: str, base_prefix: str) -> List[Dict[str, str]]:
     resp = S3.get_object(Bucket=bucket, Key=man_key)
     text = resp["Body"].read().decode("utf-8")
     reader = csv.DictReader(text.splitlines())
-    fieldnames = reader.fieldnames or []
-
-    # Require 'sample' plus at least one column starting with 'fastq'.
-    missing = {"sample"} - set(fieldnames)
+    required = {"sample", "fastq_1", "fastq_2"}
+    missing = required - set(reader.fieldnames or [])
     if missing:
         sys.exit(f"Manifest missing columns: {', '.join(sorted(missing))}")
-    if not fastq_columns(fieldnames):
-        sys.exit("Manifest missing columns: at least one 'fastq*' column is required")
-
     rows = list(reader)
     if not rows:
         sys.exit("Manifest is empty")
@@ -231,11 +222,10 @@ def classify_keys(
     samples = sorted({row["sample"] for row in manifest if row.get("sample")})
     sm = SampleMatcher(samples)
 
-    # raw read keys (object keys only) — pulled from every column whose
-    # name starts with 'fastq' (e.g. fastq_1, fastq_2, fastq_3, ...)
+    # raw read keys (object keys only)
     raw_read_keys: Set[str] = set()
     for row in manifest:
-        for col in fastq_columns(row.keys()):
+        for col in ("fastq_1", "fastq_2"):
             if row.get(col):
                 _, k = parse_uri(row[col])
                 raw_read_keys.add(k)
