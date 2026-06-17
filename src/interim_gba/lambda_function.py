@@ -16,9 +16,9 @@ S3      = SESSION.client("s3")
 
 RESULTS_PREFIX = io_ops.RESULTS_PREFIX
 
-SOURCE_TABLE_URI   = os.environ.get("SOURCE_TABLE_URI", f"s3://{RES_BUCKET}/{RESULTS_PREFIX}")
-WORKFLOW_ALT_VALUE = os.environ.get("WORKFLOW_ALT_VALUE", "phoenix")
-OUTPUT_KEY         = os.environ.get("OUTPUT_KEY", "tables/gba.csv")
+SOURCE_TABLE_URI   = f"s3://{RES_BUCKET}/{RESULTS_PREFIX}"
+WORKFLOW_ALT_VALUE = "phoenix"
+OUTPUT_KEY         = "tables/gba.csv"
 
 # ----- Utility ----- #
 def log_print(msg: Any) -> None:

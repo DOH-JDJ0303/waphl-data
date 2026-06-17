@@ -78,7 +78,9 @@ docker build \
     -f dockerfiles/Dockerfile.lambda .
 
 # ----- Prod2Res-Gather -----
-docker build \
+docker buildx build \
+    --platform linux/amd64 \
+    --provenance=false --sbom=false \
     -t "${AWS_ECR}/prod2res-gather:${STACK_VERSION}" \
     -t ${AWS_ECR}/prod2res-gather:latest \
     -f dockerfiles/Dockerfile.prod2res-gather .
@@ -86,7 +88,9 @@ docker push ${AWS_ECR}/prod2res-gather:${STACK_VERSION}
 docker push ${AWS_ECR}/prod2res-gather:latest
 
 # ----- Prod2Res-Cp -----
-docker build \
+docker buildx build \
+    --platform linux/amd64 \
+    --provenance=false --sbom=false \
     -t ${AWS_ECR}/prod2res-cp:${STACK_VERSION} \
     -t ${AWS_ECR}/prod2res-cp:latest \
     -f dockerfiles/Dockerfile.prod2res-cp .
@@ -94,7 +98,9 @@ docker push ${AWS_ECR}/prod2res-cp:${STACK_VERSION}
 docker push ${AWS_ECR}/prod2res-cp:latest
 
 # ----- Prod2Res-Terra-Gather -----
-docker build \
+docker buildx build \
+    --platform linux/amd64 \
+    --provenance=false --sbom=false \
     -t ${AWS_ECR}/prod2res-terra-gather:${STACK_VERSION} \
     -t ${AWS_ECR}/prod2res-terra-gather:latest \
     -f dockerfiles/Dockerfile.prod2res-terra-gather .
@@ -102,7 +108,9 @@ docker push ${AWS_ECR}/prod2res-terra-gather:${STACK_VERSION}
 docker push ${AWS_ECR}/prod2res-terra-gather:latest
 
 # ----- Prod2Res-Terra-Gather -----
-docker build \
+docker buildx build \
+    --platform linux/amd64 \
+    --provenance=false --sbom=false \
     -t ${AWS_ECR}/prod2res-terra-cp:${STACK_VERSION} \
     -t ${AWS_ECR}/prod2res-terra-cp:latest \
     -f dockerfiles/Dockerfile.prod2res-terra-cp .
@@ -112,7 +120,9 @@ docker push ${AWS_ECR}/prod2res-terra-cp:latest
 # ----- Interim-Gba (TEMPORARY) -----
 # TEMPORARY: stop-gap CSV exporter; remove once the permanent
 #            reporting pipeline replaces it.
-docker build \
+docker buildx build \
+    --platform linux/amd64 \
+    --provenance=false --sbom=false \
     -t ${AWS_ECR}/interim-gba:${STACK_VERSION} \
     -t ${AWS_ECR}/interim-gba:latest \
     -f dockerfiles/Dockerfile.interim-gba .
