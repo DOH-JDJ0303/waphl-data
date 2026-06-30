@@ -16,6 +16,6 @@ RUN pip install --no-cache-dir "setuptools<74" pip --upgrade
 # -----------------------------------------------------------------------------
 COPY pyproject.toml /build/
 COPY . /build/
-COPY ./schemes/ /schemes/
+COPY ./schemes/ /var/task/schemes/
 
 RUN pip install --no-cache-dir --no-build-isolation /build/ && rm -rf /build

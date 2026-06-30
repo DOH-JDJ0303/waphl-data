@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import numpy as np
 import time
 
-from shared import io_ops
+from shared import io_ops, ui
 from dashboard.inspect import result_table
 
 from shared.io_ops import FILES_PREFIX, RESULTS_PREFIX
@@ -74,7 +74,7 @@ def check_queue():
     try:
         st.session_state.df_queue = io_ops.read_delta_as_pandas(uri, filters = filt)
     except Exception as e:
-        st.error(f"Issue gathering data from {uri}:\n{e}")
+        ui.push_error(f"Issue gathering data from {uri}:\n{e}")
         return
     
     # Return early if queue is empty
@@ -156,7 +156,7 @@ def render_queue_table():
             try:
                 result_table.main()
             except Exception as e:
-                st.error("Error: Problem loading the queue. Inspect the queued files above.")
+                ui.push_error("Error: Problem loading the queue.")
                 st.exception(e)
                 st.stop()
 
@@ -232,7 +232,7 @@ def results_metadata():
 def render_results():
     df_inspect = st.session_state.get('df_inspect', pd.DataFrame())
     if df_inspect.empty:
-        st.error("No files")
+        ui.push_error("No files")
         return
     for c in ("accept", "reject"):
         if c not in df_inspect.columns:
@@ -358,11 +358,11 @@ def split_queue_by_decision():
     df_queue = st.session_state.get("df_queue", pd.DataFrame()).copy()
     
     if df_queue.empty:
-        st.error("Original queue dataframe missing; cannot move source rows.")
+        ui.push_error("Original queue dataframe missing; cannot move source rows.")
         st.stop()
     
     if "current" not in df_queue.columns:
-        st.error("Queue dataframe is missing the 'current' column.")
+        ui.push_error("Queue dataframe is missing the 'current' column.")
         st.stop()
 
     # Split based on whether 'current' filepath is in decided set
@@ -393,7 +393,7 @@ def execute_submission():
             df_edited  = st.session_state.df_edited
             df_decided = st.session_state.df_decided
             if not user:
-                st.error("User must be defined!")
+                ui.push_error("User must be defined!")
                 return
             try:
                 now_iso = datetime.now(timezone.utc).isoformat()
@@ -401,7 +401,7 @@ def execute_submission():
                 # --- results log ---
                 df_results = df_edited[(df_edited["accept"]) | (df_edited["reject"])]
                 if df_results.empty:
-                    st.error("Something went wrong!")
+                    ui.push_error("Something went wrong!")
                     return
 
                 df_results["inspected_by"] = user
@@ -411,7 +411,7 @@ def execute_submission():
 
                 # --- files table: update inspected -> True ---
                 if df_decided.empty:
-                    st.error("Something went wrong!")
+                    ui.push_error("Something went wrong!")
                     return
                 df_decided["inspected"] = True
                 df_decided["inspected_by"] = user
@@ -441,7 +441,7 @@ def execute_submission():
                 reset_state()
 
             except Exception as e:
-                st.error(f"Submission failed: {e}")
+                ui.push_error(f"Submission failed: {e}")
                 st.exception(e)
                 st.stop()
 

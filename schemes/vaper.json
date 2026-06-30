@@ -3,15 +3,15 @@
   "workflow": "vaper",
   "trigger": "VAPER-summary.csv",
   "summary_columns": {
-    "id": "ID",
-    "qc_status": "ASSEMBLY_QC",
-    "qc_reason": "ASSEMBLY_QC_REASON",
-    "read_depth": "ASSEMBLY_EST_DEPTH",
-    "genome_length": "ASSEMBLY_LENGTH",
-    "genome_fraction": "ASSEMBLY_GEN_FRAC",
-    "gc_ratio": "GC_%",
-    "species": "SPECIES",
-    "segment": "SEGMENT"
+    "id": ["ID"],
+    "qc_status": ["ASSEMBLY_QC"],
+    "qc_reason": ["ASSEMBLY_QC_REASON"],
+    "read_depth": ["ASSEMBLY_EST_DEPTH", "assembly_read_depth"],
+    "genome_length": ["ASSEMBLY_LENGTH"],
+    "genome_fraction": ["ASSEMBLY_GEN_FRAC", "assembly_genome_fraction"],
+    "gc_ratio": ["GC_%"],
+    "species": ["SPECIES"],
+    "segment": ["SEGMENT"]
   },
   "qc_criteria": [
     {

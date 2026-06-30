@@ -51,29 +51,20 @@ def process_mycosnp(sample_files, global_files, df_queue):
 
 
 # ---------- VAPER ---------- 
-def process_vaper(sample_files, global_files):
+def process_vaper(sample_files):
     sample_files_out = {}
     for (sid, id_alt, run), sfiles in sample_files.items():
         assemblies = sfiles.get("assembly", [])
-        summaries  = sfiles.get("summary", [])
-        summary_map = {data_processing.extract_stem(summary): summary for summary in summaries}
+        row = {k: v for k, v in sfiles.items() if k not in ['assembly']}
 
         if len(assemblies) == 0:
-            row = {k: v for k, v in sfiles.items() if k not in ['assembly', 'summary']}
-
             row['assembly'] = []
-            row['summary']  = []
-
             sample_files_out[(sid, id_alt, run, None)] = row
 
         for assembly in assemblies:
-            row = {k: v for k, v in sfiles.items() if k not in ['assembly', 'summary']}
             a_stem   = data_processing.extract_stem(assembly)
-            ref_name = a_stem.replace(f"{sid}_T1_", '')
-
+            ref_name = a_stem.split("_")[-1] if a_stem else None
             row['assembly'] = [assembly]
-            row['summary']  = [summary_map.get(f"{a_stem}.summaryline")]
-
             sample_files_out[(sid, id_alt, run, ref_name)] = row
      
-    return sample_files_out, global_files
+    return sample_files_out

@@ -64,3 +64,8 @@ def submodule_overview(text):
             <div class="submodule-overview-body">{text}</div>
         </div>
     """)
+
+def push_error(msg: str):
+    st.session_state.setdefault("error_messages", []).append(msg)
+    # re-render the full list into the single slot
+    st.session_state["error_slot"].error("\n\n".join(st.session_state["error_messages"]))

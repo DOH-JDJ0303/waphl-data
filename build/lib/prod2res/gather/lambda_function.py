@@ -43,6 +43,10 @@ def parse_uri(s3_uri: str) -> Tuple[str, str]:
         sys.exit(f"Malformed S3 URI: {s3_uri}")
     return bucket, key
 
+def fastq_columns(fieldnames: Iterable[str]) -> List[str]:
+    """Return all manifest column names that start with 'fastq'."""
+    return [c for c in (fieldnames or []) if c and c.startswith("fastq")]
+
 def check_file(bucket: str, key: str, fail: bool = True, message: bool = True) -> bool:
     if message:
         log_print(f"Checking exists: s3://{bucket}/{key}")
@@ -139,10 +143,15 @@ def load_run_manifest(bucket: str, base_prefix: str) -> List[Dict[str, str]]:
     resp = S3.get_object(Bucket=bucket, Key=man_key)
     text = resp["Body"].read().decode("utf-8")
     reader = csv.DictReader(text.splitlines())
-    required = {"sample", "fastq_1", "fastq_2"}
-    missing = required - set(reader.fieldnames or [])
+    fieldnames = reader.fieldnames or []
+
+    # Require 'sample' plus at least one column starting with 'fastq'.
+    missing = {"sample"} - set(fieldnames)
     if missing:
         sys.exit(f"Manifest missing columns: {', '.join(sorted(missing))}")
+    if not fastq_columns(fieldnames):
+        sys.exit("Manifest missing columns: at least one 'fastq*' column is required")
+
     rows = list(reader)
     if not rows:
         sys.exit("Manifest is empty")
@@ -201,6 +210,23 @@ class FilePatternMatcher:
         return None
 
 # ----- Core Logic ----- #
+def _dest_key(sample: Optional[str], workflow: str, run: str, key_bn: str, ts: int) -> str:
+    return (
+        f"{RAW_PREFIX}/id={sample or ''}/"
+        f"workflow={workflow}/run={run}/"
+        f"file={key_bn}/timestamp={ts}/{key_bn}"
+    )
+
+def head_timestamp(bucket: str, key: str) -> int:
+    """LastModified epoch for an object; fail if the object is missing."""
+    try:
+        resp = S3.head_object(Bucket=bucket, Key=key)
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "404":
+            sys.exit(f"Missing manifest read object: s3://{bucket}/{key}")
+        raise
+    return int(resp["LastModified"].timestamp())
+
 def classify_keys(
     run_keys: Dict[str, int],
     manifest: List[Dict[str, str]],
@@ -210,50 +236,81 @@ def classify_keys(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """
     Build:
-      - meta_rows for Delta 'files' table
+      - meta_rows for the Delta 'files' table
       - transfer_jobs for SQS (source/dest pointers)
+
+    Raw reads are taken directly from the manifest: each fastq* URI keeps its own
+    bucket and key, the sample comes from that manifest row, and the file is always
+    reportable and typed 'raw_reads'. All other files are discovered by listing the
+    run directory (the reads subdirectory is excluded) and are matched to samples /
+    typed by pattern as before.
     """
     meta_rows: List[Dict[str, Any]] = []
     transfer_jobs: List[Dict[str, str]] = []
 
     workflow = scheme.get("workflow")
 
-    # samples from manifest
+    # ----- 1) Samples + raw reads from the manifest -----
     samples = sorted({row["sample"] for row in manifest if row.get("sample")})
     sm = SampleMatcher(samples)
 
-    # raw read keys (object keys only)
-    raw_read_keys: Set[str] = set()
+    # (sample, bucket, key) for every fastq* cell in the manifest
+    manifest_reads: List[Tuple[Optional[str], str, str]] = []
+    manifest_read_keys: Set[str] = set()
     for row in manifest:
-        for col in ("fastq_1", "fastq_2"):
+        sample = row.get("sample")
+        for col in fastq_columns(row.keys()):
             if row.get(col):
-                _, k = parse_uri(row[col])
-                raw_read_keys.add(k)
+                b, k = parse_uri(row[col])
+                manifest_reads.append((sample, b, k))
+                manifest_read_keys.add(k)
 
-    # file pattern rules (optional)
+    # ----- 2) Emit raw-read rows/jobs straight from the manifest -----
+    for sample, src_bucket, key in manifest_reads:
+        key_bn = os.path.basename(key)
+        ts = head_timestamp(src_bucket, key)
+        dest_key = _dest_key(sample, workflow, run, key_bn, ts)
+
+        meta_rows.append({
+            "id": sample,                       # manifest's sample designation
+            "workflow": workflow,
+            "run": run,
+            "file": key_bn,
+            "timestamp": ts,
+            "reportable": True,
+            "type": "raw_reads",
+            "origin": f"s3://{src_bucket}/{key}",   # manifest's own bucket
+            "current": f"s3://{DEST_BUCKET}/{dest_key}",
+        })
+
+        if not check_file(DEST_BUCKET, dest_key, fail=False, message=False):
+            transfer_jobs.append({
+                "SOURCE_BUCKET": src_bucket,
+                "SOURCE_KEY": key,
+                "DEST_BUCKET": DEST_BUCKET,
+                "DEST_KEY": dest_key,
+            })
+
+    # ----- 3) Everything else comes from the run directory listing -----
     reportable_files = scheme.get("reportable_files", {})
     fp = FilePatternMatcher(reportable_files) if reportable_files else None
 
     for key, ts in run_keys.items():
+        if f"{run}/reads/" in key:
+            continue # skip the reads subdir, which is already handled by the manifest
+
         key_bn = os.path.basename(key)
         sample = sm.match(key)  # may be None
 
-        # decide reportable/type
         reportable = False
         ftype = "other"
-        if key in raw_read_keys:
-            reportable, ftype = True, "raw_reads"
-        elif fp:
+        if fp:
             hit = fp.match(key_bn)
             if hit:
                 reportable = True
                 ftype = hit.get("type", "other")
 
-        dest_key = (
-            f"{RAW_PREFIX}/id={sample or ''}/"
-            f"workflow={workflow}/run={run}/"
-            f"file={key_bn}/timestamp={ts}/{key_bn}"
-        )
+        dest_key = _dest_key(sample, workflow, run, key_bn, ts)
 
         meta_rows.append({
             "id": sample,
@@ -263,11 +320,11 @@ def classify_keys(
             "timestamp": ts,
             "reportable": bool(reportable),
             "type": ftype,
-            "origin": f"s3://{bucket}/{key}",
+            "origin": f"s3://{bucket}/{key}",       # function's bucket
             "current": f"s3://{DEST_BUCKET}/{dest_key}",
         })
 
-        if not check_file(DEST_BUCKET, dest_key, fail = False, message = False):
+        if not check_file(DEST_BUCKET, dest_key, fail=False, message=False):
             transfer_jobs.append({
                 "SOURCE_BUCKET": bucket,
                 "SOURCE_KEY": key,

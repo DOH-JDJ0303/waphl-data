@@ -8,6 +8,10 @@ utils.env("AWS_ACCESS_KEY_ID")
 utils.env("AWS_SECRET_ACCESS_KEY")
 utils.env("AWS_DEFAULT_REGION")
 
+# standardize session state for error messages and slot
+st.session_state["error_messages"] = []
+st.session_state["error_slot"]     = st.empty()
+
 # === Sidebar Config ===
 with st.sidebar:
     st.subheader("⚙️ Configuration")
@@ -34,3 +38,6 @@ if all(k in st.session_state for k in ("user", "prod_bucket", "res_bucket")):
     pg.run()
 else:
     st.info("👈 Please complete configuration in the sidebar to get started.")
+
+if st.session_state.get("error_slot"):
+        st.session_state["error_slot"] = st.empty()

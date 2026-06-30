@@ -11,7 +11,7 @@ import numpy as np
 import fsspec
 from collections import defaultdict
 
-from shared import data_processing
+from shared import data_processing, ui
 from dashboard.inspect import workflow_specific_functions as wsf
 
 # ---------- GLOBALS ----------
@@ -23,12 +23,12 @@ def select_scheme() -> Dict[str, Any]:
     """Load the single JSON scheme matching `workflow` from schemes/."""
     workflow = st.session_state.get("inspect_workflow")
     if workflow is None:
-        st.error("No workflow selected")
+        st.session_state["error_message"] = st.error("No workflow selected")
         return
     
     scheme_dir = Path("./schemes")
     if not scheme_dir.is_dir():
-        st.error(f"Scheme directory not found: {scheme_dir}")
+        ui.push_error(f"Scheme directory not found: {scheme_dir}")
 
     for schema_file in scheme_dir.glob("*.json"):
         with open(schema_file, "r") as f:
@@ -38,7 +38,7 @@ def select_scheme() -> Dict[str, Any]:
             st.session_state.inspect_scheme = data
             return
 
-    st.error(f"No scheme found for workflow: {workflow!r}")
+    ui.push_error(f"No scheme found for workflow: {workflow!r}")
 
 
 # ---------- HELPERS ----------
@@ -48,8 +48,14 @@ def extract_scheme_info():
     if scheme is None:
         return None, None, None
     
-    summary_cols = { str(k).lower(): str(v).lower() for k, v in scheme.get("summary_columns", {}).items()}
-
+    summary_cols = {
+        str(k).lower(): (
+            [v.lower()] if isinstance(v, str) 
+            else [str(item).lower() for item in v]
+        )
+        for k, v in scheme.get("summary_columns", {}).items()
+    }
+    
     file_types: set = set()
     for rec in scheme.get("reportable_files", []):
         if isinstance(rec, dict):
@@ -59,8 +65,8 @@ def extract_scheme_info():
     for rec in scheme.get("qc_criteria", []):
         if 'column' in rec:
             rec['column'] = str(rec['column']).lower()
-            for alt, col in summary_cols.items():
-                rec['column'] = alt if rec['column'] == col.lower() else rec['column']
+            for alt, cols in summary_cols.items():
+                rec['column'] = alt if rec['column'] in cols else rec['column']
             qc_criteria.append(rec)
     
     return summary_cols, sorted(file_types), qc_criteria
@@ -88,7 +94,7 @@ def process_records(records):
         current = row.get("current", "").strip()
 
         if not run or not current or not origin:
-            st.error(f"Missing run name or file path. sid={sid}, run={run!r}, current_path={current!r}, origin_path={current!r}")
+            ui.push_error(f"Missing run name or file path. sid={sid}, run={run!r}, current_path={current!r}, origin_path={current!r}")
 
         fgroup = ftype if reportable else "files_supplementary"
 
@@ -154,9 +160,88 @@ def apply_qc_row(row: pd.Series, criteria: List[Dict[str, Any]]) -> bool:
     return True
 
 
+def _process_summary_data(
+    paths: List[str],
+    cols_lower: Dict[str, str],
+    filter_vals: List[str] = [],
+    filter_cols: List[str] = [],
+) -> Dict[str, Any]:
+    # Always collect into lists keyed by the desired output fields
+    collected: Dict[str, List[str]] = {out_key: [] for out_key in cols_lower}
+
+    # Pair up filters safely (ignore extras on either side)
+    filters = [
+        (str(val) if val is not None else None, str(col).lower())
+        for val, col in zip(filter_vals or [], filter_cols or [])
+    ]
+
+    any_rows_kept = False
+
+    for p in paths or []:
+        if p is None:
+            continue
+        df = data_processing.read_table(p)
+        if df is None or df.empty:
+            continue
+
+        df_filt = df.copy()
+        df_filt.columns = [str(c).lower() for c in df_filt.columns]
+
+        # Apply filters (substring match, case-sensitive by your original code;
+        # switch to .str.contains(..., case=False) if you want case-insensitive)
+        for val_str, col in filters:
+            if not val_str or col not in df_filt.columns:
+                continue
+            mask = df_filt[col].astype(str).str.contains(val_str, na=False)
+            df_filt = df_filt[mask]
+
+        if not df_filt.empty:
+            any_rows_kept = True
+
+        # Collect requested columns
+        for out_key, src_cols in cols_lower.items():
+            for c in src_cols:
+                cl = str(c).lower()
+                if cl in df_filt.columns:
+                    vals = (
+                        df_filt[cl]
+                        .dropna()
+                        .astype(str)
+                        .tolist()
+                    )
+                    collected[out_key].extend(vals)
+
+    # If no rows matched anywhere, return all summary fields as NaN
+    if not any_rows_kept:
+        return {out_key: np.nan for out_key in cols_lower}
+
+    # Validate + merge
+    merged: Dict[str, Any] = {}
+    for field, vals in collected.items():
+        # Deduplicate while preserving order
+        seen = set()
+        uniq = []
+        for v in vals:
+            if v not in seen:
+                seen.add(v)
+                uniq.append(v)
+
+        if len(uniq) > 1:
+            # Keep your strictness; include filters for easier debugging
+            raise ValueError(
+                f"Summary field '{field}' has multiple unique values: {uniq}. "
+                f"Expected exactly one unique value. "
+                f"Filters used: {filter_vals}; {filter_cols}"
+            )
+
+        merged[field] = uniq[0] if uniq else np.nan
+
+    return merged
+
+
 def build_rows(
     global_files: Dict,
-    sample_files: Dict, 
+    sample_files: Dict,
     summary_cols: Dict,
     file_types: List[str],
     workflow: str,
@@ -170,86 +255,11 @@ def build_rows(
     """
     rows: List[Dict[str, Any]] = []
     file_types_set = set(file_types)
-    summary_filter_cols = [summary_cols['id'].lower()] if summary_cols.get('id') else []
+    summary_filter_cols = summary_cols['id'] if summary_cols.get('id') else []
     summary_filters_vals = []
 
-    def _process_summary_data(
-        paths: List[str],
-        cols_lower: Dict[str, str],
-        filter_vals: List[str] = [],
-        filter_cols: List[str] = []
-    ) -> Dict[str, Any]:
-        # Always collect into lists keyed by the desired output fields
-        collected: Dict[str, List[str]] = {out_key: [] for out_key in cols_lower}
-
-        # Pair up filters safely (ignore extras on either side)
-        filters = [
-            (str(val) if val is not None else None, str(col).lower())
-            for val, col in zip(filter_vals or [], filter_cols or [])
-        ]
-
-        any_rows_kept = False
-
-        for p in paths or []:
-            df = data_processing.read_table(p)
-            if df is None or df.empty:
-                continue
-
-            df_filt = df.copy()
-            df_filt.columns = [str(c).lower() for c in df_filt.columns]
-
-            # Apply filters (substring match, case-sensitive by your original code;
-            # switch to .str.contains(..., case=False) if you want case-insensitive)
-            for val_str, col in filters:
-                if not val_str or col not in df_filt.columns:
-                    continue
-                mask = df_filt[col].astype(str).str.contains(val_str, na=False)
-                df_filt = df_filt[mask]
-
-            if not df_filt.empty:
-                any_rows_kept = True
-
-            # Collect requested columns
-            for out_key, src_col in cols_lower.items():
-                src_col_l = str(src_col).lower()
-                if src_col_l in df_filt.columns:
-                    vals = (
-                        df_filt[src_col_l]
-                        .dropna()
-                        .astype(str)
-                        .tolist()
-                    )
-                    collected[out_key].extend(vals)
-
-        # If no rows matched anywhere, return all summary fields as NaN
-        if not any_rows_kept:
-            return {out_key: np.nan for out_key in cols_lower}
-
-        # Validate + merge
-        merged: Dict[str, Any] = {}
-        for field, vals in collected.items():
-            # Deduplicate while preserving order
-            seen = set()
-            uniq = []
-            for v in vals:
-                if v not in seen:
-                    seen.add(v)
-                    uniq.append(v)
-
-            if len(uniq) > 1:
-                # Keep your strictness; include filters for easier debugging
-                raise ValueError(
-                    f"Summary field '{field}' has multiple unique values: {uniq}. "
-                    f"Expected exactly one unique value. "
-                    f"Filters used: {filter_vals}; {filter_cols}"
-                )
-
-            merged[field] = uniq[0] if uniq else np.nan
-
-        return merged
-    
     if workflow == 'vaper':
-        sample_files, global_files = wsf.process_vaper(sample_files, global_files)
+        sample_files = wsf.process_vaper(sample_files)
         summary_filter_cols = summary_filter_cols + ['reference']
     if workflow == 'mycosnp':
         sample_files, global_files = wsf.process_mycosnp(sample_files, global_files, df_to_process)
@@ -267,7 +277,6 @@ def build_rows(
 
         # Attach global files
         g = global_files.get(run, {})
-        # attach global files
         for k2, v2 in g.items():
             row_files.setdefault(k2, [])
             row_files[k2].extend(v2)
@@ -277,18 +286,17 @@ def build_rows(
         for k, v in row_files.items():
             if k != 'files_supplementary':
                 reportable_files.extend(v if isinstance(v, list) else [])
-        
+
         row_files['files_reportable']    = reportable_files
         row_files['files_supplementary'] = row_files.get('files_supplementary', [])
-    
+
         if 'summary' in row_files:
             summary_data = _process_summary_data(
                 row_files['summary'],
-                summary_cols, 
-                filter_vals = summary_filters_vals, 
-                filter_cols = summary_filter_cols
+                summary_cols,
+                filter_vals=summary_filters_vals,
+                filter_cols=summary_filter_cols,
             )
-
             row_files = row_files | summary_data
 
         for k in summary_cols.keys():
