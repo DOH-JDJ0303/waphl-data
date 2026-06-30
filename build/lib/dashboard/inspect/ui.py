@@ -70,6 +70,22 @@ def check_queue():
     st.session_state.df_inspect    = pd.DataFrame()
     st.session_state.df_edited     = pd.DataFrame()
 
+    # Reset all other state derived from a previous queue pull / workflow,
+    # so nothing from a prior workflow's session leaks into this one.
+    for key in (
+        "queue_selected_mask",
+        "df_inspect_working",
+        "df_decided",
+        "df_undecided",
+        "decided_files",
+        "undecided_files",
+        "submit_status",
+        "submit_status_confirm",
+        "inspect_scheme",
+        "inspect_warnings",
+    ):
+        st.session_state.pop(key, None)
+
     # Pull files
     try:
         st.session_state.df_queue = io_ops.read_delta_as_pandas(uri, filters = filt)
@@ -106,10 +122,10 @@ def render_queue_table():
         # Selection control buttons       
         c1, c2, _ = st.columns([1, 1, 6])
         with c1:
-            if st.button("Select all"):
+            if st.button("Select all", key="queue_select_all"):
                 st.session_state.queue_selected_mask = [True] * num_rows
         with c2:
-            if st.button("Clear selection"):
+            if st.button("Clear selection", key="queue_clear_selection"):
                 st.session_state.queue_selected_mask = [False] * num_rows
 
         # Add selection column and render editor
@@ -237,22 +253,73 @@ def render_results():
     for c in ("accept", "reject"):
         if c not in df_inspect.columns:
             df_inspect[c] = False
-        
-    # Reorder columns with accept/reject first
+
+    # Reorder columns with accept/reject first, and normalize the index so it
+    # lines up positionally with the data_editor's edited_rows keys.
     first = ["accept", "reject"]
     df_inspect = df_inspect[first + [c for c in df_inspect.columns if c not in first]]
-    
+    df_inspect = df_inspect.reset_index(drop=True)
+
+    # Persist a working copy across reruns so select-all/clear-all and the
+    # mutual-exclusion fixups stick instead of getting wiped each rerun.
+    # check_queue() clears "df_inspect_working" whenever a fresh queue is
+    # pulled, so this only (re)initializes on a genuinely new result set.
+    if "df_inspect_working" not in st.session_state:
+        st.session_state.df_inspect_working = df_inspect.copy()
+
+    df_working = st.session_state.df_inspect_working
+
+    # --- Select all / clear all controls ---
+    c1, c2, c3, c4, _ = st.columns([1.3, 1.1, 1.3, 1.1, 4.2])
+    with c1:
+        if st.button("Select all accept", key="results_select_all_accept"):
+            df_working["accept"] = True
+            df_working["reject"] = False
+    with c2:
+        if st.button("Clear accept", key="results_clear_accept"):
+            df_working["accept"] = False
+    with c3:
+        if st.button("Select all reject", key="results_select_all_reject"):
+            df_working["reject"] = True
+            df_working["accept"] = False
+    with c4:
+        if st.button("Clear reject", key="results_clear_reject"):
+            df_working["reject"] = False
+
     df_edited = st.data_editor(
-        df_inspect,
+        df_working,
         column_config={
             col: st.column_config.Column(disabled=True)
-            for col in df_inspect.columns
+            for col in df_working.columns
             if col not in ["accept", "reject"]
         },
         num_rows="dynamic",
         use_container_width=True,
         key="editor",
     )
+
+    # --- Enforce accept/reject mutual exclusivity (neither selected is OK) ---
+    # st.session_state["editor"] holds the raw widget diff for this run:
+    # {"edited_rows": {row_idx: {col: new_value, ...}, ...}, ...}
+    editor_state = st.session_state.get("editor", {})
+    edited_rows = editor_state.get("edited_rows", {})
+
+    needs_rerun = False
+    for row_idx, changes in edited_rows.items():
+        i = int(row_idx)
+        if i >= len(df_edited):
+            continue
+        if changes.get("accept") is True and bool(df_edited.iloc[i]["reject"]):
+            df_edited.iat[i, df_edited.columns.get_loc("reject")] = False
+            needs_rerun = True
+        if changes.get("reject") is True and bool(df_edited.iloc[i]["accept"]):
+            df_edited.iat[i, df_edited.columns.get_loc("accept")] = False
+            needs_rerun = True
+
+    st.session_state.df_inspect_working = df_edited
+
+    if needs_rerun:
+        st.rerun()
 
     col1, col2 = st.columns(2)
     with col1:
