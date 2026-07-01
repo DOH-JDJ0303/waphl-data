@@ -22,6 +22,7 @@ flowchart TD
         TCOMPUTE["Fargate Spot<br/>Compute Env"]
         TJOB["Terra Copy Batch Job<br/>prod2res-terra-cp"]
         TLOG[/"CloudWatch<br/>Log Group"/]
+        TCACHE[("Transferred-runs cache<br/>(in Dest Bucket)")]
     end
 
     %% ---------- Interim GBA (temporary) ----------
@@ -31,24 +32,28 @@ flowchart TD
     end
 
     %% ---------- AWS to AWS flows ----------
-    SRC -- "object created" --> S3EVT
+    SRC -- "object created \n(trigger file)" --> S3EVT
     S3EVT --> GATHER
-    GATHER -- "read" --> SRC
-    GATHER -- "head / put" --> DST
-    GATHER -- "send message" --> GQ
+    GATHER -- "gather list of files for transfer" --> SRC
+    GATHER -- "check if files already exist / write to metadata table" --> DST
+    GATHER -- "submit transfer jobs (batches of file lists)" --> GQ
     GQ -. "after 3 failures" .-> DLQ
-    GQ -- "event source mapping" --> COPY
-    SRC -- "read" --> COPY
-    COPY -- "write" --> DST
+    GQ -- "initiate file transfer" --> COPY
+    SRC -- "copy files (read)" --> COPY
+    COPY -- "copy files (write)" --> DST
 
     %% ---------- Terra to AWS flows ----------
     TCRON --> TGATHER
-    TGATHER -- "read / write state" --> DST
+    TGATHER -. "query run status (FireCloud API)" .-> TERRA
+    TGATHER -. "query cache<br/>(skip transferred runs)" .-> TCACHE
     TGATHER -- "submit job" --> TQUEUE
+    TCACHE  --> TGATHER
     TQUEUE --> TCOMPUTE
     TCOMPUTE --> TJOB
+    TERRA   --> TGATHER
     TERRA -- "read" --> TJOB
     TJOB -- "write" --> DST
+    TJOB -- "update cache" --> TCACHE
     TJOB -- "logs" --> TLOG
 
     %% ---------- Interim GBA flows ----------
@@ -58,7 +63,9 @@ flowchart TD
 
     %% ---------- Styling ----------
     classDef bucket fill:#e8f0fe,stroke:#4285f4,color:#111,font-weight:bold;
-    class SRC,DST,TERRA bucket;
+    class SRC,DST,TERRA,TCACHE bucket;
+
+    classDef api fill:#fef7e0,stroke:#f9ab00,color:#111;
 
     style GBA fill:#f5f5f5,stroke:#999,stroke-dasharray:5 5,color:#555;
     style GCRON fill:#eeeeee,stroke:#999,stroke-dasharray:4 4;
