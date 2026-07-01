@@ -47,12 +47,12 @@ flowchart TD
     TGATHER -. "query run status (FireCloud API)" .-> TERRA
     TGATHER -. "query cache<br/>(skip transferred runs)" .-> TCACHE
     TGATHER -- "submit job" --> TQUEUE
-    TCACHE  --> TGATHER
+    TCACHE  -.-> TGATHER
     TQUEUE --> TCOMPUTE
     TCOMPUTE --> TJOB
-    TERRA   --> TGATHER
-    TERRA -- "read" --> TJOB
-    TJOB -- "write" --> DST
+    TERRA   -.-> TGATHER
+    TERRA -- "copy files (read)" --> TJOB
+    TJOB -- "copy files (write)" --> DST
     TJOB -- "update cache" --> TCACHE
     TJOB -- "logs" --> TLOG
 
