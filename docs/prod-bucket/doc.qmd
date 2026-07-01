@@ -1,0 +1,211 @@
+---
+title: "Production Bucket Standards"
+author:
+  - name: "Jared Johnson"
+date: today
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    number-sections: true
+    theme: minty
+    embed-resources: true
+    code-copy: true
+    code-overflow: wrap
+params:
+  production_bucket: "<production-bucket>"
+  results_bucket: "<results-bucket>"
+---
+
+<!--
+Bucket names are injected at render time so the real values never live in source
+control. Pass them on the command line:
+
+  quarto render standards.qmd \
+    -P production_bucket:my-real-prod-bucket \
+    -P results_bucket:my-real-results-bucket
+
+...or keep them in a gitignored params file:
+
+  quarto render standards.qmd --execute-params secrets.yml
+
+If you render without overriding, the placeholder values in the YAML header are
+used, which makes an un-filled render obvious rather than broken.
+-->
+
+```{r}
+#| label: setup
+#| include: false
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+required <- c("rmarkdown")
+missing  <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) {
+  install.packages(missing, dependencies = TRUE)
+}
+
+prod_bucket <- params$production_bucket
+res_bucket  <- params$results_bucket
+```
+
+## Overview
+
+This document outlines the standard practices for establishing and maintaining
+bioinformatic workflows in the `r prod_bucket` bucket. These standards ensure
+that the [data-transfer pipeline](https://github.com/waphl-bioinformatics/waphl-data)
+can correctly identify, classify, and transfer files from the production bucket
+(`r prod_bucket`) to the results bucket (`r res_bucket`).
+
+---
+
+## Directory structure
+
+The production bucket is organized as follows:
+
+```{r}
+#| echo: false
+#| results: asis
+tree <- "s3://{B}/
+├── workflow/
+│   └── <workflow_name>/              # e.g. phoenix, vaper
+│       └── runs/
+│           └── <run_name>/           # e.g. VSP021-M8782-260617
+│               ├── manifest.csv      # REQUIRED — see 'The manifest.csv file'
+│               ├── reads/            # raw reads for this run
+│               │   ├── sampleA_R1.fastq.gz
+│               │   ├── sampleA_R2.fastq.gz
+│               │   └── ...
+│               └── <output files>    # results, reports, assemblies, etc.
+└── work/                             # temp/intermediate files (lifecycle-deleted)"
+cat("```default\n", gsub("{B}", prod_bucket, tree, fixed = TRUE), "\n```\n", sep = "")
+```
+
+Each top-level area serves a distinct purpose:
+
+| Location            | Purpose                                                                 |
+|---------------------|-------------------------------------------------------------------------|
+| `workflow/`         | One directory per workflow (pipeline); all runs live beneath it.        |
+| `.../runs/<run>/`   | One directory per run; holds that run's outputs and its `manifest.csv`. |
+| `.../runs/<run>/reads/` | Raw read files (FASTQs) for the run (optional).                     |
+| `work/`             | Temporary/intermediate files, periodically removed by a lifecycle rule. |
+
+### The `manifest.csv` file
+
+The `manifest.csv` is **required for every run** and must sit in the root of the
+run directory. It must contain:
+
+- a `sample` column — the sample name/identifier, and
+- at least one `fastq*` column — the full `s3://...` URI of a read file for that
+  sample (e.g. `fastq_1`, `fastq_2`).
+
+#### Example `manifest.csv`
+
+```{r}
+#| echo: false
+#| results: asis
+manifest <- "sample,fastq_1,fastq_2
+sampleA,s3://{B}/workflow/phoenix/runs/run01/reads/sampleA_R1.fastq.gz,s3://{B}/workflow/phoenix/runs/run01/reads/sampleA_R2.fastq.gz
+sampleB,s3://{B}/workflow/phoenix/runs/run01/reads/sampleB_R1.fastq.gz,s3://{B}/workflow/phoenix/runs/run01/reads/sampleB_R2.fastq.gz"
+cat("```csv\n", gsub("{B}", prod_bucket, manifest, fixed = TRUE), "\n```\n", sep = "")
+```
+
+::: {.callout-note}
+Files in the `reads/` directory are **ignored** by the pipeline unless they are
+listed in the `manifest.csv`.
+:::
+
+---
+
+## File transfer and classification
+
+### How a transfer is triggered
+
+The pipeline runs when a **trigger file** is written into the run directory (via
+an AWS S3 event notification). The trigger filename is defined in the workflow's
+scheme (below).
+
+::: {.callout-important}
+The trigger file should be the **last** file written, so the pipeline never processes an incomplete run.
+:::
+
+### How files are classified
+
+Once triggered, the pipeline scans the run directory and classifies every file
+along two independent dimensions:
+
+| Dimension       | Categories                     | How it is decided                                                                 |
+|-----------------|--------------------------------|-----------------------------------------------------------------------------------|
+| **Scope**       | `sample` / `run` (global)      | Files paths containing a sample name from the manifest are classified as `sample`; otherwise it is a run-wide (global) file. |
+| **Reportability** | `reportable` / `non-reportable`  | Files matching a pattern in the scheme's are classified as `reportable` and tagged with that pattern's `type`; otherwise it is `non-reportable` and tagged as `other`. |
+
+::: {.callout-note}
+Raw reads listed in the `manifest.csv` are a special case: they are always
+classified as **reportable sample** files and assigned the type `raw_reads`.
+:::
+
+### Workflow schemes
+
+Each workflow has a scheme (JSON) that drives trigger detection and file
+classification. An example scheme for the `vaper` workflow:
+
+```json
+{
+  "scheme": "vaper",
+  "workflow": "vaper",
+  "trigger": "VAPER-summary.csv",
+  "summary_columns": {
+    "id": ["id"],
+    "qc_status": ["assembly_qc"],
+    "qc_reason": ["assembly_qc_reason"],
+    "read_depth": ["assembly_est_depth", "assembly_read_depth"],
+    "genome_length": ["assembly_length"],
+    "genome_fraction": ["assembly_gen_frac", "assembly_genome_fraction"],
+    "species": ["species"],
+    "segment": ["segment"]
+  },
+  "qc_criteria": [
+    {
+      "column": "assembly_qc",
+      "equals": "PASS"
+    }
+  ],
+  "reportable_files": [
+    { "pattern": "multiqc_report.html", "type": "log" },
+    { "pattern": "*.fa.gz",             "type": "assembly" },
+    { "pattern": "VAPER-summary.csv",   "type": "summary" }
+  ]
+}
+```
+
+The scheme fields:
+
+Each of the fields from the scheme are explained in the table below:
+
+| Field              | Purpose                                                                                  | Used In |
+|--------------------|-------------------------------------------------------------------------------------------|---------|
+| `scheme`           | Name of the scheme - normally the same as the workflow name                              | Data Transfer; Inspection & Reporting |
+| `workflow`         | Workflow this scheme applies to; written onto every file's metadata.                     | Data Transfer; Inspection & Reporting |
+| `trigger`          | The filename whose appearance signals the run is complete and starts ingestion.          | Data Transfer |
+| `reportable_files` | List of `{ "pattern", "type" }` rules. A file whose **basename** matches a pattern is reportable and tagged with that type. | Data Transfer; Inspection & Reporting (classifications carry through to reporting) |
+| `summary_columns`  | Maps the workflow summary file column names to standardized fields used in the metadata and results database (used for inspection and reporting). Multiple columns can map to the same standardized field (accounts for variations in column naming). | Inspection & Reporting |
+| `qc_criteria`      | Conditions (e.g. a column equals `PASS`) used to evaluate QC status during inspection and reporting.                      | Inspection & Reporting |
+
+In the `vaper` example, the trigger is the workflow's summary CSV; the reportable
+rules mark the MultiQC HTML report as a `log`, gzipped FASTA files as `assembly`,
+and the summary CSV itself as `summary`. Patterns support `*` (any run of
+characters) and `?` (a single character), matched against the file's basename.
+
+---
+
+## Setup checklist for a new run
+
+- [ ] Run directory exists at `workflow/<workflow>/runs/<run>/`.
+- [ ] Raw reads are in `.../runs/<run>/reads/` (optional).
+- [ ] `manifest.csv` is at the run directory root.
+- [ ] Manifest has a `sample` column and at least one `fastq*` column.
+- [ ] Every fastq URI in the manifest points to a real object.
+- [ ] Output files for the run are written into the run directory.
+- [ ] A scheme exists for the workflow, with the correct `trigger` and `reportable_files` patterns.
+- [ ] The trigger file is written **last**, once everything else is in place.

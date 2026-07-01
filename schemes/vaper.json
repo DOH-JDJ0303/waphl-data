@@ -3,34 +3,24 @@
   "workflow": "vaper",
   "trigger": "VAPER-summary.csv",
   "summary_columns": {
-    "id": ["ID"],
-    "qc_status": ["ASSEMBLY_QC"],
-    "qc_reason": ["ASSEMBLY_QC_REASON"],
-    "read_depth": ["ASSEMBLY_EST_DEPTH", "assembly_read_depth"],
-    "genome_length": ["ASSEMBLY_LENGTH"],
-    "genome_fraction": ["ASSEMBLY_GEN_FRAC", "assembly_genome_fraction"],
-    "gc_ratio": ["GC_%"],
-    "species": ["SPECIES"],
-    "segment": ["SEGMENT"]
+    "id": ["id"],
+    "qc_status": ["assembly_qc"],
+    "qc_reason": ["assembly_qc_reason"],
+    "read_depth": ["assembly_est_depth", "assembly_read_depth"],
+    "genome_length": ["assembly_length"],
+    "genome_fraction": ["assembly_gen_frac", "assembly_genome_fraction"],
+    "species": ["species"],
+    "segment": ["segment"]
   },
   "qc_criteria": [
     {
-      "column": "ASSEMBLY_QC", 
+      "column": "assembly_qc",
       "equals": "PASS"
     }
   ],
   "reportable_files": [
-    {
-      "pattern": "multiqc_report.html",
-      "type": "log"
-    },
-    {
-      "pattern": "*.fa.gz",
-      "type": "assembly"
-    },
-    {
-      "pattern": "VAPER-summary.csv",
-      "type": "summary"
-    }
+    { "pattern": "multiqc_report.html", "type": "log" },
+    { "pattern": "*.fa.gz",             "type": "assembly" },
+    { "pattern": "VAPER-summary.csv",   "type": "summary" }
   ]
 }
