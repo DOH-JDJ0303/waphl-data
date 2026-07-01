@@ -1,3 +1,5 @@
+## Data Transfer Workflow
+
 ```mermaid
 flowchart TD
     %% ---------- Shared storage ----------
@@ -70,4 +72,64 @@ flowchart TD
     style GBA fill:#f5f5f5,stroke:#999,stroke-dasharray:5 5,color:#555;
     style GCRON fill:#eeeeee,stroke:#999,stroke-dasharray:4 4;
     style GBAFN fill:#eeeeee,stroke:#999,stroke-dasharray:4 4;
+```
+## Results Inspection & Reporting Workflow
+
+```mermaid
+flowchart TD
+    %% ---------- Storage in Dest Bucket ----------
+    subgraph DEST["Destination Bucket (from transfer pipeline)"]
+        DATA[("data/<br/>transferred files")]
+        META[("tables/metadata<br/>Delta table<br/>partitions: workflow, inspected")]
+        RESULTS[("tables/results<br/>Delta table")]
+        SCHEME{{"workflow scheme<br/>(JSON)"}}
+    end
+
+    %% ---------- Dashboard ----------
+    subgraph DASH["Inspect Dashboard (Streamlit)"]
+        SELECT["Select workflow<br/>+ Check Queue"]
+        QUEUE["Build queue<br/>uninspected files"]
+        BUILD["Build result table"]
+        QC["Pre-check with<br/>QC criteria"]
+        REVIEW["Reviewer accepts /<br/>rejects each row"]
+        CONFIRM["Confirm submission"]
+    end
+
+    USER(["Reviewer"])
+
+    %% ---------- Queue construction ----------
+    QUEUE  -. "query: workflow_alt = X<br/>AND inspected = false" .-> META
+    META -.-> QUEUE
+    SELECT --> QUEUE
+    USER --> SELECT
+
+    %% ---------- Result table construction ----------
+    QUEUE --> BUILD
+    SCHEME -- "identify reportable files<br/>(pattern → type)" --> BUILD
+    DATA -- "read summary files" --> BUILD
+    SCHEME -- "summary_columns<br/>to include" --> BUILD
+    BUILD --> QC
+    SCHEME -- "qc_criteria" --> QC
+
+    %% ---------- Review + submit ----------
+    QC -- "pre-marked accept/reject" --> REVIEW
+    USER -- "adjust decisions" --> REVIEW
+    REVIEW --> CONFIRM
+
+    %% ---------- Writes on submit ----------
+    CONFIRM -- "write decisions<br/>(status, inspected_by/at,<br/>+ summary columns)" --> RESULTS
+    CONFIRM -- "mark inspected = true" --> META
+
+    %% ---------- Styling ----------
+    classDef store fill:#e8f0fe,stroke:#4285f4,color:#111,font-weight:bold;
+    class DATA,META,RESULTS store;
+
+    classDef scheme fill:#fef7e0,stroke:#f9ab00,color:#111;
+    class SCHEME scheme;
+
+    classDef actor fill:#e6f4ea,stroke:#34a853,color:#111,font-weight:bold;
+    class USER actor;
+
+    style DEST fill:#f8faff,stroke:#4285f4,stroke-dasharray:4 4;
+    style DASH fill:#fafafa,stroke:#666;
 ```
