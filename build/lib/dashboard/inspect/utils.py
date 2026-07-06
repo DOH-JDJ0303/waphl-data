@@ -33,16 +33,14 @@ def extract_scheme_info():
                 rec['column'] = alt if rec['column'] in cols else rec['column']
             qc_criteria.append(rec)
 
-    # reportable_files is a list of {"pattern": ..., "type": ...} objects;
-    # we need the deduped set of "type" values, in first-seen order.
     reportable_files = scheme.get("reportable_files", [])
-    seen = set()
-    file_types = []
-    for entry in reportable_files:
-        ft = str(entry.get("type", "")).strip()
-        if ft and ft not in seen:
-            seen.add(ft)
-            file_types.append(ft)
+
+    file_types = {
+        str(entry.get("type", "")).strip()
+        for entry in reportable_files
+        if entry.get("type")
+    }
+    file_types.add("raw_reads")
 
     st.session_state["inspect_summary_cols"] = summary_cols
     st.session_state["inspect_qc_criteria"]  = qc_criteria

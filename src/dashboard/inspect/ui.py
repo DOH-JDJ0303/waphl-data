@@ -180,9 +180,8 @@ def check_queue():
 
     # Return early if queue is empty
     if st.session_state.df_queue.empty:
-        ui.push_message(f"{workflow} queue is empty!", type="warning")
+        ui.push_message(f"The {workflow} queue if empty!", type="warning")
         return
-
 
 def render_queue_table():
     """
@@ -287,8 +286,24 @@ def getting_started():
             st.session_state.inspect_workflow = workflow
             utils.select_scheme()
             st.markdown("##### Check the results queue")
-            if st.button("Check Queue"):
-                check_queue()
+
+            c1, c2, c3 = st.columns([1, 2, 1])
+
+            with c1:
+                if st.button("Check Queue"):
+                    check_queue()
+
+            with c2:
+                st.text_input(
+                    "Run to import",
+                    key="import_run_input",
+                    label_visibility="collapsed",
+                    placeholder="Run to import",
+                )
+
+            with c3:
+                if st.button("Import Run"):
+                    import_run()
 
 def queue_files():
     df_queue = st.session_state.get('df_queue', pd.DataFrame())
@@ -582,3 +597,53 @@ def check_submission():
             with col2:
                 if st.button("Cancel Submission"):
                     st.session_state.submit_status_confirm = False
+
+def import_run():
+    """Import a run into the queue for inspection. This is used when the queue is empty, and the user has not yet selected a workflow."""
+    source_bucket = st.session_state.get('res_bucket')
+    workflow = st.session_state.get("inspect_workflow")
+    if not workflow:
+        ui.push_message("You must select a workflow before importing a run.", type="warning")
+        return
+    run_to_import = st.session_state.get("import_run_input", "").strip()
+
+    if not run_to_import:
+        ui.push_message("Please enter a run to import.", type="warning")
+        return
+    try:
+        uri = f"s3://{source_bucket}/{FILES_PREFIX}"
+
+        # Only filter on the partition column
+        df = io_ops.read_delta_as_pandas(
+            uri,
+            filters=[("workflow_alt", "=", workflow)],
+        )
+
+        # Filter by run in pandas
+        df = df[df["run"] == run_to_import]
+
+        if df.empty:
+            ui.push_message(
+                f"No files found for run '{run_to_import}' in workflow '{workflow}'.",
+                type="warning",
+            )
+            return
+
+        df = df.copy()  # Avoid SettingWithCopyWarning
+
+        df["inspected"] = False
+        df["inspected_by"] = None
+        df["inspected_at"] = None
+
+        io_ops.write_delta(
+            df=df,
+            uri=uri,
+            key_cols=FILES_TABLE_MERGE_KEYS,
+            partition_by=FILES_TABLE_PARTITIONS,
+        )
+
+        check_queue()
+    except Exception as e:
+        ui.push_message(f"Failed to import run {run_to_import}: {e}", type="error")
+        st.exception(e)
+    

@@ -17,7 +17,6 @@ st.session_state.setdefault("error_messages", [])
 st.session_state.setdefault("warning_messages", [])
 st.session_state.setdefault("dismissed_messages", set())
 
-
 @st.dialog("Notifications", dismissible=False)
 def _show_messages_dialog():
     """Blocking modal: shows queued errors/warnings, closes only via button."""
