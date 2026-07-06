@@ -5,8 +5,8 @@ from dashboard.inspect import ui
 import shared.ui
 
 # === Config ===
-SOURCE_BUCKET = st.session_state.res_bucket
-S3            = boto3.session.Session().client("s3")
+SOURCE_BUCKET  = st.session_state.res_bucket
+S3             = boto3.session.Session().client("s3")
 
 # === Page ===
 st.title("Inspect Results")

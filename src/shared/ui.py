@@ -65,7 +65,13 @@ def submodule_overview(text):
         </div>
     """)
 
-def push_error(msg: str):
-    st.session_state.setdefault("error_messages", []).append(msg)
-    # re-render the full list into the single slot
-    st.session_state["error_slot"].error("\n\n".join(st.session_state["error_messages"]))
+def push_message(msg: str, type: str = "error"):
+    # Already closed by the user this session -> don't nag or trigger a rerun.
+    if msg in st.session_state.get("dismissed_messages", set()):
+        return
+    key = "warning_messages" if type == "warning" else "error_messages"
+    queue = st.session_state.setdefault(key, [])
+    if msg in queue:
+        return
+    queue.append(msg)
+    st.rerun()

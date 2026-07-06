@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 src/__init__.py
 src/dashboard/__init__.py
@@ -5,6 +6,7 @@ src/dashboard/utils.py
 src/dashboard/inspect/__init__.py
 src/dashboard/inspect/result_table.py
 src/dashboard/inspect/ui.py
+src/dashboard/inspect/utils.py
 src/dashboard/inspect/workflow_specific_functions.py
 src/dashboard/search/__init__.py
 src/dashboard/search/ui.py

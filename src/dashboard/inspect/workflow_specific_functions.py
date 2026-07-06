@@ -4,67 +4,34 @@ import pandas as pd
 from collections import defaultdict
 from typing import Dict, Any, List, Tuple, DefaultDict
 
-from shared import data_processing
-
-# ---------- MYCOSNP ----------
-def process_mycosnp(sample_files, global_files, df_queue):
-    sample_files_out, global_files_out = {}, {}
-
-    for (sid, id_alt, run), sfiles in sample_files.items():
-        row = {}
-        # determine Clade
-        summary, clade = None, None
-        for summary in global_files.get(run, {}).get('summary', []):
-            df_summary = data_processing.read_table(summary)
-
-            if df_summary is None or df_summary.empty:
-                continue
-
-            if not all(c in df_summary.columns for c in ['Sample', 'Predicted_Subtype']):
-                continue
-                
-            for _sid in df_summary["Sample"].values:
-                if sid == _sid:
-                    clade = df_summary[df_summary["Sample"] == sid]["Predicted_Subtype"].iloc[0]
-                    row["summary"] = [summary]            
-                    break
-
-        clade_matcher = f"mycosnp-{clade.lower().replace('_', '-')}" if clade else None
-            
-        # Process sample files
-        for fgroup, filepaths in sfiles.items():
-            if fgroup == 'summary':
-                continue
-            for filepath in filepaths:
-                row.setdefault(fgroup, []).append(filepath)
-
-        # Process global files
-        for fgroup, filepaths in global_files.get(run, {}).items():
-            for filepath in filepaths:
-                filepath_origin = df_queue[df_queue['current'] == filepath]['origin'].iloc[0].lower()
-                if (clade is not None and clade_matcher in filepath_origin) or ('clade-' not in filepath_origin):
-                    row.setdefault(fgroup, []).append(filepath)
-
-        sample_files_out[(sid, id_alt, run)] = row
-        
-    return sample_files_out, global_files_out
-
+from shared import data_processing, ui
 
 # ---------- VAPER ---------- 
-def process_vaper(sample_files):
-    sample_files_out = {}
-    for (sid, id_alt, run), sfiles in sample_files.items():
-        assemblies = sfiles.get("assembly", [])
-        row = {k: v for k, v in sfiles.items() if k not in ['assembly']}
+def process_vaper(df_summary: pd.DataFrame) -> pd.DataFrame:
+    """
+    Extract the reference name from each row's assembly file and add it as a
+    'reference' column, to be used later for joining against the 'reference'
+    column produced elsewhere (e.g. VAPER summary matching).
+    Reference is derived as the token after the final underscore in the
+    assembly filename's stem. Rows with no assembly value get reference=None.
+    """
+    df_summary = df_summary.copy()
 
-        if len(assemblies) == 0:
-            row['assembly'] = []
-            sample_files_out[(sid, id_alt, run, None)] = row
+    if "assembly" not in df_summary.columns:
+        ui.push_message(
+            "process_vaper: no 'assembly' column found in summary data; "
+            "'reference' column will be empty",
+            type="warning",
+        )
+        df_summary["reference"] = None
+        return df_summary
 
-        for assembly in assemblies:
-            a_stem   = data_processing.extract_stem(assembly)
-            ref_name = a_stem.split("_")[-1] if a_stem else None
-            row['assembly'] = [assembly]
-            sample_files_out[(sid, id_alt, run, ref_name)] = row
-     
-    return sample_files_out
+    def _reference_from_assembly(path):
+        if not path or (isinstance(path, float) and pd.isna(path)):
+            return None
+        a_stem = data_processing.extract_stem(path)
+        return a_stem.split("_")[-1] if a_stem else None
+
+    df_summary["reference"] = df_summary["assembly"].apply(_reference_from_assembly)
+
+    return df_summary

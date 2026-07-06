@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import json
 from pathlib import Path
@@ -17,123 +18,18 @@ from dashboard.inspect import workflow_specific_functions as wsf
 # ---------- GLOBALS ----------
 BASE_COLS = ["accept", "reject", "id_alt", "run", "workflow_alt"]
 
-
-# ---------- CONFIG LOADING ----------
-def select_scheme() -> Dict[str, Any]:
-    """Load the single JSON scheme matching `workflow` from schemes/."""
-    workflow = st.session_state.get("inspect_workflow")
-    if workflow is None:
-        st.session_state["error_message"] = st.error("No workflow selected")
-        return
-    
-    scheme_dir = Path("./schemes")
-    if not scheme_dir.is_dir():
-        ui.push_error(f"Scheme directory not found: {scheme_dir}")
-
-    for schema_file in scheme_dir.glob("*.json"):
-        with open(schema_file, "r") as f:
-            data = json.load(f)
-        if data.get("workflow") == workflow:
-            st.toast(f"Using scheme {schema_file}")
-            st.session_state.inspect_scheme = data
-            return
-
-    ui.push_error(f"No scheme found for workflow: {workflow!r}")
-
-
-# ---------- HELPERS ----------
-def extract_scheme_info():
-    """Get lowercased summary cols, reportable file types, and QC rules."""
-    scheme = st.session_state.get("inspect_scheme")
-    if scheme is None:
-        return None, None, None
-    
-    summary_cols = {
-        str(k).lower(): (
-            [v.lower()] if isinstance(v, str) 
-            else [str(item).lower() for item in v]
-        )
-        for k, v in scheme.get("summary_columns", {}).items()
-    }
-    
-    file_types: set = set()
-    for rec in scheme.get("reportable_files", []):
-        if isinstance(rec, dict):
-            file_types.add(rec.get("type", "other"))
-
-    qc_criteria = []
-    for rec in scheme.get("qc_criteria", []):
-        if 'column' in rec:
-            rec['column'] = str(rec['column']).lower()
-            for alt, cols in summary_cols.items():
-                rec['column'] = alt if rec['column'] in cols else rec['column']
-            qc_criteria.append(rec)
-    
-    return summary_cols, sorted(file_types), qc_criteria
-
-
-def process_records(records):
-    global_files     = defaultdict(lambda: defaultdict(list))   # key: run
-    sample_files     = defaultdict(lambda: defaultdict(list))   # key: (id_alt, run)
-    file_cache       = defaultdict(lambda: [])
-    superceded_files = []
-
-    # Sort by file timestamp
-    sorted_records = sorted(records, key=lambda d: d.get("score", float("inf")))
-
-    for row in sorted_records:
-        sid        = row.get("id")
-        id_alt     = row.get("id_alt")
-        run        = row.get("run")
-        reportable = bool(row.get("reportable", False))
-        ftype_raw  = row.get("type", "other")
-        ftype      = (ftype_raw or "other").strip().lower()
-
-        # Get current and origin paths
-        origin  = row.get("origin", "").strip()
-        current = row.get("current", "").strip()
-
-        if not run or not current or not origin:
-            ui.push_error(f"Missing run name or file path. sid={sid}, run={run!r}, current_path={current!r}, origin_path={current!r}")
-
-        fgroup = ftype if reportable else "files_supplementary"
-
-        if id_alt:     # sample-level
-            key = (sid, id_alt, run)
-            if origin in file_cache.get(key, []):
-                superceded_files.append(current)
-            else:
-                sample_files[key][fgroup].append(current)
-                file_cache[key].append(origin)
-        else:          # run-level (global)
-            key = run
-            if origin in file_cache.get(key, []):
-                superceded_files.append(current)
-            else:
-                global_files[key][fgroup].append(current)
-                file_cache[key].append(origin)
-
-    if superceded_files:
-        st.session_state.get("inspect_warnings", []).append(f"The following files are superceded by a newer version and will be automatically marked 'reject': {superceded_files}")
-
-    return global_files, sample_files, superceded_files
-
-
 def apply_qc_row(row: pd.Series, criteria: List[Dict[str, Any]]) -> bool:
     """Return True if row passes all numeric min/max rules."""
-    if "inspect_warnings" not in st.session_state:
-        st.session_state.inspect_warnings = []
 
     for rule in criteria or []:
         col = rule.get("column", '').lower().strip()
 
         if not col or col not in row:
-            st.session_state.inspect_warnings.append(f"apply_qc_row: Row {row.name}: {col!r} not in data")
+            ui.push_message(f"apply_qc_row: Row {row.name}: {col!r} not in data", type="warning")
             return False
 
         val = row[col]
         if pd.isna(val) or val is None:
-            st.session_state.inspect_warnings.append(f"apply_qc_row: Row {row.name}: value is n/a or null")
             return False
 
         if rule.get("equals") is not None and str(val) != str(rule['equals']):
@@ -159,201 +55,244 @@ def apply_qc_row(row: pd.Series, criteria: List[Dict[str, Any]]) -> bool:
 
     return True
 
-
-def _process_summary_data(
-    paths: List[str],
-    cols_lower: Dict[str, str],
-    filter_vals: List[str] = [],
-    filter_cols: List[str] = [],
-) -> Dict[str, Any]:
-    # Always collect into lists keyed by the desired output fields
-    collected: Dict[str, List[str]] = {out_key: [] for out_key in cols_lower}
-
-    # Pair up filters safely (ignore extras on either side)
-    filters = [
-        (str(val) if val is not None else None, str(col).lower())
-        for val, col in zip(filter_vals or [], filter_cols or [])
-    ]
-
-    any_rows_kept = False
-
-    for p in paths or []:
-        if p is None:
-            continue
-        df = data_processing.read_table(p)
-        if df is None or df.empty:
-            continue
-
-        df_filt = df.copy()
-        df_filt.columns = [str(c).lower() for c in df_filt.columns]
-
-        # Apply filters (substring match, case-sensitive by your original code;
-        # switch to .str.contains(..., case=False) if you want case-insensitive)
-        for val_str, col in filters:
-            if not val_str or col not in df_filt.columns:
-                continue
-            mask = df_filt[col].astype(str).str.contains(val_str, na=False)
-            df_filt = df_filt[mask]
-
-        if not df_filt.empty:
-            any_rows_kept = True
-
-        # Collect requested columns
-        for out_key, src_cols in cols_lower.items():
-            for c in src_cols:
-                cl = str(c).lower()
-                if cl in df_filt.columns:
-                    vals = (
-                        df_filt[cl]
-                        .dropna()
-                        .astype(str)
-                        .tolist()
-                    )
-                    collected[out_key].extend(vals)
-
-    # If no rows matched anywhere, return all summary fields as NaN
-    if not any_rows_kept:
-        return {out_key: np.nan for out_key in cols_lower}
-
-    # Validate + merge
-    merged: Dict[str, Any] = {}
-    for field, vals in collected.items():
-        # Deduplicate while preserving order
-        seen = set()
-        uniq = []
-        for v in vals:
-            if v not in seen:
-                seen.add(v)
-                uniq.append(v)
-
-        if len(uniq) > 1:
-            # Keep your strictness; include filters for easier debugging
-            raise ValueError(
-                f"Summary field '{field}' has multiple unique values: {uniq}. "
-                f"Expected exactly one unique value. "
-                f"Filters used: {filter_vals}; {filter_cols}"
-            )
-
-        merged[field] = uniq[0] if uniq else np.nan
-
-    return merged
-
-
-def build_rows(
-    global_files: Dict,
-    sample_files: Dict,
-    summary_cols: Dict,
-    file_types: List[str],
-    workflow: str,
-    df_to_process: None,
-) -> List[Dict[str, Any]]:
+def build_rows() -> pd.DataFrame:
     """
-    Build one row per sample; if multiple assemblies exist, make one row per assembly.
-    For summary data: read ALL summary files for the sample and, for each summary column,
-    join multiple values with ';' (deduplicated, order-preserving). Attach these merged
-    summary values to every row for the sample.
-    """
-    rows: List[Dict[str, Any]] = []
-    file_types_set = set(file_types)
-    summary_filter_cols = summary_cols['id'] if summary_cols.get('id') else []
-    summary_filters_vals = []
+    Pivot the classified frame into one row per (id, id_alt, run), with one column per
+    reportable file type.
 
-    if workflow == 'vaper':
-        sample_files = wsf.process_vaper(sample_files)
-        summary_filter_cols = summary_filter_cols + ['reference']
-    if workflow == 'mycosnp':
-        sample_files, global_files = wsf.process_mycosnp(sample_files, global_files, df_to_process)
+    Starts from df_processed (produced by classify_files). Every sample (id, id_alt,
+    run) present in df_processed gets a row, even if none of its files are
+    reportable — such samples simply end up with NaN in every file-type column.
+    For samples with at least one reportable file, each file type is filled from the
+    sample's own reportable files, falling back to the run's global reportable files
+    when a type is absent at the sample level. Missing types (after fallback) raise
+    a warning.
+
+    Returns a DataFrame: id, id_alt, run, <file types...>.
+    """
+    df = st.session_state.get("df_processed", pd.DataFrame())
+    if df.empty:
+        return
+
+    file_types = list(st.session_state.get("inspect_reportable_file_types", []))
+    if not file_types:
+        ui.push_message("No reportable file types found in scheme", type="warning")
+        return
+    out_cols = ["id", "id_alt", "run"] + file_types
+
+    # ---------- pivot to one row per id x run ----------
+    kept = df[df["reportable"]].copy()  # reportable files only, used to fill values
+    sample_kept = kept[kept["id_alt"] != ""]
+    global_rows = kept[kept["id_alt"] == ""]
+
+    # Global fallback: (run, type) -> [current, ...]  (dedup, first-seen order)
+    global_lookup = defaultdict(list)
+    for _, r in global_rows.iterrows():
+        c = r["current"]
+        if c and c not in global_lookup[(r["run"], r["type"])]:
+            global_lookup[(r["run"], r["type"])].append(c)
+    global_lookup = dict(global_lookup)
+
+    sample_type_lookup = {}
+    for (sid, id_alt, run), sub in sample_kept.groupby(["id", "id_alt", "run"], dropna=False):
+        per_type = defaultdict(list)
+        for t, c in zip(sub["type"], sub["current"]):
+            if c and c not in per_type[t]:
+                per_type[t].append(c)
+        sample_type_lookup[(sid, id_alt, run)] = dict(per_type)
+
+    # Every sample present in df_processed gets a row, even if it has zero
+    # reportable files (in which case it just gets NaN for every file type).
+    all_samples = df[df["id_alt"] != ""][["id", "id_alt", "run"]].drop_duplicates()
 
     final_rows = []
-    for key, sfiles in sample_files.items():
-        if len(key) == 3:
-            sid, id_alt, run = key
-            summary_filters_vals = [sid]
-        else:
-            sid, id_alt, run, ref_name = key
-            summary_filters_vals = [sid, ref_name]
-
-        row_files = sfiles.copy()
-
-        # Attach global files
-        g = global_files.get(run, {})
-        for k2, v2 in g.items():
-            row_files.setdefault(k2, [])
-            row_files[k2].extend(v2)
-
-        # Gather full list of reportable files
-        reportable_files = []
-        for k, v in row_files.items():
-            if k != 'files_supplementary':
-                reportable_files.extend(v if isinstance(v, list) else [])
-
-        row_files['files_reportable']    = reportable_files
-        row_files['files_supplementary'] = row_files.get('files_supplementary', [])
-
-        if 'summary' in row_files:
-            summary_data = _process_summary_data(
-                row_files['summary'],
-                summary_cols,
-                filter_vals=summary_filters_vals,
-                filter_cols=summary_filter_cols,
+    for _, srow in all_samples.iterrows():
+        sid, id_alt, run = srow["id"], srow["id_alt"], srow["run"]
+        type_to_file = sample_type_lookup.get((sid, id_alt, run), {})
+        row = {"id": sid, "id_alt": id_alt, "run": run}
+        missing = []
+        for ft in file_types:
+            files = type_to_file.get(ft) or global_lookup.get((run, ft)) or []
+            if not files:
+                missing.append(ft)
+                row[ft] = np.nan
+            elif ft == "summary":
+                # Exactly one summary per sample by definition; keep it scalar
+                # so the id/summary merge downstream stays a clean 1:1 join.
+                if len(files) > 1:
+                    ui.push_message(
+                        f"Sample {sid!r} (run {run!r}) has {len(files)} summary "
+                        f"files; expected one. Using first: {files[0]}",
+                        type="warning",
+                    )
+                row[ft] = files[0]
+            else:
+                row[ft] = list(files)   # one or more paths
+        if missing:
+            ui.push_message(
+                f"Sample {sid!r} (run {run!r}) is missing file type(s): {', '.join(missing)}",
+                type="warning",
             )
-            row_files = row_files | summary_data
+        final_rows.append(row)
 
-        for k in summary_cols.keys():
-            row_files.setdefault(k, np.nan)
+    st.session_state["df_grouped"] = pd.DataFrame(final_rows, columns=out_cols)
 
-        base = {
-            "id": sid,
-            "id_alt": id_alt,
-            "run": run,
-            "workflow_alt": workflow,
-        }
+def add_summary_columns():
+    """Add summary columns to the grouped frame."""
+    df = st.session_state.get("df_grouped", pd.DataFrame())
+    if df.empty:
+        return
 
-        # overlay: base → row (files) → merged summary values
-        full_row = {**base, **row_files}
-        final_rows.append(full_row)
+    summary_columns = st.session_state.get("inspect_summary_cols", {})
+    if not summary_columns:
+        return
 
-    return final_rows
+    file_types = list(st.session_state.get("inspect_reportable_file_types", []))
+    if not file_types:
+        return
+
+    if "summary" not in df.columns:
+        return
+
+    workflow = st.session_state.get("inspect_workflow")
+
+    # ---- build column mapping (old -> new) ----
+    col_map = {}
+    for new_col, old_cols in summary_columns.items():
+        if isinstance(old_cols, str):
+            col_map[old_cols] = new_col
+        else:
+            for c in old_cols:
+                col_map[c] = new_col
+
+    # ---- load summary tables ----
+    summary_dfs = []
+    for uri in df["summary"].dropna().unique():
+        tmp = data_processing.read_table(uri)
+        tmp.columns = [str(c).lower() for c in tmp.columns]
+        tmp = tmp.rename(columns=col_map)
+        tmp["summary"] = uri
+        summary_dfs.append(tmp)
+
+    df_summary = (
+        pd.concat(summary_dfs, ignore_index=True)
+        if summary_dfs
+        else pd.DataFrame()
+    )
+
+    if df_summary.empty:
+        return
+
+    # Strip a trailing "_T<number>" suffix from the summary's id column
+    # (e.g. "SAMPLE123_T1" -> "SAMPLE123") so it matches df_grouped's id.
+    if "id" in df_summary.columns:
+        df_summary["id"] = (
+            df_summary["id"]
+            .astype(str)
+            .str.replace(r"_T\d+$", "", regex=True)
+        )
+
+    merge_keys = ["id", "summary"]
+    if workflow == "vaper":
+        df = wsf.process_vaper(df)
+        merge_keys.append("reference")
+
+    missing_keys = [k for k in merge_keys if k not in df_summary.columns]
+    if missing_keys:
+        ui.push_message(
+            f"Summary tables are missing merge column(s): {', '.join(missing_keys)}. "
+            f"Columns found: {', '.join(map(str, df_summary.columns))}. "
+            "Check the scheme's summary_columns mapping. Skipping summary merge.",
+            type="warning",
+        )
+        return
+
+    df_merged = df.merge(
+        df_summary,
+        on=merge_keys,
+        how="left",
+        suffixes=("", "_summary")
+    )
+
+    # ---- ensure BASE_COLS fields exist before selecting output columns ----
+    # workflow_alt: prefer a per-sample value carried on df_processed (joined on
+    # id/id_alt/run); fall back to a single workflow-level value from session state
+    # if no per-sample column is available.
+    df = st.session_state.get("df_processed", pd.DataFrame())
+    if "workflow_alt" in df.columns:
+        walt_lookup = (
+            df[["id", "id_alt", "run", "workflow_alt"]]
+            .dropna(subset=["workflow_alt"])
+            .drop_duplicates(subset=["id", "id_alt", "run"], keep="last")
+            .set_index(["id", "id_alt", "run"])["workflow_alt"]
+        )
+        df_merged["workflow_alt"] = (
+            df_merged.set_index(["id", "id_alt", "run"]).index.map(walt_lookup)
+        )
+    else:
+        df_merged["workflow_alt"] = st.session_state.get("inspect_workflow_alt")
+
+    # accept/reject are computed later in apply_qc(); add placeholders now so the
+    # BASE_COLS-based selection below doesn't KeyError before QC has run.
+    if "accept" not in df_merged.columns:
+        df_merged["accept"] = pd.NA
+    if "reject" not in df_merged.columns:
+        df_merged["reject"] = pd.NA
+
+    keep_cols = ["id"] + BASE_COLS + list(summary_columns.keys()) + file_types
+    seen = set()
+    keep_cols = [c for c in keep_cols if not (c in seen or seen.add(c))]
+
+    df_merged = df_merged[keep_cols]
+
+    st.session_state["df_results"] = df_merged
+    
+
+def apply_qc() -> pd.DataFrame:
+    df = st.session_state.get("df_results", pd.DataFrame()).copy()
+    if df.empty:
+        return  
+    qc_criteria = st.session_state.get("inspect_qc_criteria", [])
+    if not qc_criteria:
+        return
+
+    df["accept"] = [apply_qc_row(r, qc_criteria) for _, r in df.iterrows()]
+    df["reject"] = ~df["accept"]
+
+    st.session_state["df_results"] = df
 
 
-def apply_qc(df_out: pd.DataFrame, qc_criteria: List[Dict[str, Any]]) -> pd.DataFrame:
-    st.session_state.inspect_warnings = []
-    df_out["accept"] = [apply_qc_row(r, qc_criteria) for _, r in df_out.iterrows()]
-    df_out["reject"] = ~df_out["accept"]
-    return df_out
+def order_df() -> pd.DataFrame:
+    df = st.session_state.get("df_results", pd.DataFrame()).copy()
+    if df.empty:
+        return
 
-
-def order_columns(df: pd.DataFrame, summary_cols_dict: Dict[str, str]) -> pd.DataFrame:
+    summary_cols_dict = st.session_state.get("inspect_summary_cols", {})
     summary_cols = list(summary_cols_dict.keys())
     present_base = [c for c in BASE_COLS if c in df.columns]
     other_cols = [c for c in df.columns if c not in present_base + summary_cols]
-    return df[present_base + summary_cols + other_cols]
+    df = df[present_base + summary_cols + other_cols]
+
+    # ---- order rows by id_alt, run ----
+    sort_cols = [c for c in ("run", "id_alt") if c in df.columns]
+    if sort_cols:
+        df = df.sort_values(by=sort_cols, kind="stable", na_position="last")
+
+    st.session_state["df_inspect"] = df
 
 
 # ---------- MAIN ----------
 def main():
     workflow = st.session_state.get("inspect_workflow")
-    df_to_process = st.session_state.get("df_to_process", pd.DataFrame())
+    df_processed = st.session_state.get("df_processed", pd.DataFrame())
 
-    if workflow is None or df_to_process.empty:
+    if workflow is None or df_processed.empty:
         return
-    
-    select_scheme()
-    summary_cols, file_types, qc_criteria = extract_scheme_info()
 
-    records = df_to_process.to_dict("records")
-    global_files, sample_files, superceded_files = process_records(records)
-    rows = build_rows(global_files, sample_files, summary_cols, file_types, workflow, df_to_process)
-
-    df_out = pd.DataFrame(rows)
-    if df_out.empty:
-        return pd.DataFrame(columns=BASE_COLS + list(summary_cols.keys()))
-
-    df_out = apply_qc(df_out, qc_criteria)
-    df_out = order_columns(df_out, summary_cols)
-
-    st.session_state.df_inspect  = df_out
-    st.session_state.super_files = superceded_files
+    build_rows()
+    add_summary_columns()
+    apply_qc()
+    order_df()
 
 if __name__ == "__main__":
     print("This module exposes main(df, workflow) → DataFrame")

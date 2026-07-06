@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 import numpy as np
 import time
 
+from collections import defaultdict
+
 from shared import io_ops, ui
-from dashboard.inspect import result_table
+from dashboard.inspect import result_table, utils
 
 from shared.io_ops import FILES_PREFIX, RESULTS_PREFIX
 from shared.data_processing import (
@@ -17,6 +19,8 @@ from shared.data_processing import (
     RESULTS_TABLE_MERGE_KEYS,
     RESULTS_TABLE_PARTITIONS,
 )
+
+QUEUE_TYPE_COL = "type" # Column in the files/queue table identifying each file's type.
 
 # ============================================================================
 # State Management
@@ -39,6 +43,82 @@ def reset_state(preserve_keys=None):
 # ============================================================================
 # Queue Management
 # ============================================================================
+def get_scheme_types():
+    """Types the workflow scheme covers (deduped `type` values from
+    reportable_files, computed by utils.extract_scheme_info).
+
+    Reads inspect_reportable_file_types only. check_queue() pops inspect_scheme
+    before this runs, so don't fall back to the raw scheme here.
+    """
+    types = st.session_state.get("inspect_reportable_file_types") or []
+    return {str(t).strip() for t in types}
+
+
+def _submit_auto_inspected(df_unlisted):
+    """Write unlisted-type rows back to the files table as inspected, then
+    pop a toast with the count."""
+    source_bucket = st.session_state.get("res_bucket")
+    user = st.session_state.get("user")
+    if not source_bucket or not user:
+        ui.push_message(
+            "Skipped auto-submitting unlisted types (missing user or bucket).",
+            type="warning",
+        )
+        return
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    df_unlisted["inspected"] = True
+    df_unlisted["inspected_by"] = user
+    df_unlisted["inspected_at"] = now_iso
+    # ensure bool really is bool (parquet/delta can get fussy)
+    df_unlisted["inspected"] = df_unlisted["inspected"].astype(bool)
+
+    try:
+        io_ops.write_delta(
+            df=df_unlisted,
+            uri=f"s3://{source_bucket}/{FILES_PREFIX}/",
+            key_cols=FILES_TABLE_MERGE_KEYS,
+            partition_by=FILES_TABLE_PARTITIONS,
+        )
+    except Exception as e:
+        ui.push_message(f"Failed to auto-submit unlisted types: {e}")
+        st.exception(e)
+        return
+
+    n = len(df_unlisted)
+    st.toast(
+        f"Auto-submitted {n} file{'s' if n != 1 else ''} with a type not in "
+        f"the workflow scheme.",
+        icon="📤",
+    )
+
+
+def auto_inspect_unlisted_types():
+    """Drop rows from df_queue whose type isn't in the workflow scheme, mark
+    them inspected, and write them back to the files table so they never reach
+    df_view / the inspector."""
+    df_queue = st.session_state.get("df_queue", pd.DataFrame())
+    if df_queue.empty or QUEUE_TYPE_COL not in df_queue.columns:
+        return
+
+    allowed = get_scheme_types()
+    if not allowed:
+        # Couldn't resolve scheme types -> do NOT auto-submit the whole queue.
+        ui.push_message(
+            "No reportable file types resolved from the scheme; "
+            "skipping auto-submission of unlisted types.",
+            type="warning",
+        )
+        return
+
+    types = utils.normalize_type_series(df_queue[QUEUE_TYPE_COL])
+    unlisted_mask = ~types.isin(allowed)
+
+    df_unlisted = df_queue[unlisted_mask].copy()
+    st.session_state.df_queue = df_queue[~unlisted_mask].reset_index(drop=True)
+
+    if not df_unlisted.empty:
+        _submit_auto_inspected(df_unlisted)
 
 def check_queue():
     """
@@ -54,7 +134,7 @@ def check_queue():
     
     workflow = st.session_state.inspect_workflow
     if not workflow:
-        st.warning("You must select a workflow before checking results.")
+        ui.push_message("You must select a workflow before checking results.", type="warning")
         return
     
     uri = f"s3://{source_bucket}/{FILES_PREFIX}"
@@ -86,16 +166,21 @@ def check_queue():
     ):
         st.session_state.pop(key, None)
 
-    # Pull files
+# Pull files
     try:
         st.session_state.df_queue = io_ops.read_delta_as_pandas(uri, filters = filt)
     except Exception as e:
-        ui.push_error(f"Issue gathering data from {uri}:\n{e}")
+        ui.push_message(f"Issue gathering data from {uri}:\n{e}")
         return
-    
+
+    # Files whose type isn't in the workflow scheme can't be inspected, so mark
+    # them inspected, push them back to the files table now, and keep them out
+    # of the queue the user sees.
+    auto_inspect_unlisted_types()
+
     # Return early if queue is empty
     if st.session_state.df_queue.empty:
-        st.warning(f"{workflow} queue is empty!")
+        ui.push_message(f"{workflow} queue is empty!", type="warning")
         return
 
 
@@ -106,7 +191,7 @@ def render_queue_table():
     Returns:
         DataFrame: Subset of df_queue with selected rows
     """
-    df_queue = st.session_state.df_queue
+    df_queue = st.session_state.get("df_queue", pd.DataFrame())
     if df_queue.empty:
         return
     with st.expander("Files in Queue (select rows to process)", expanded=False):
@@ -164,15 +249,17 @@ def render_queue_table():
         st.session_state.df_to_process = df_to_process
 
         if df_to_process.empty:
-            st.warning("No files selected from queue")
+            ui.push_message("No files selected from queue", type="warning")
             st.stop()
+
+        utils.classify_files()
 
         # Process selected rows
         if st.session_state.get('df_inspect', pd.DataFrame()).empty:
             try:
                 result_table.main()
             except Exception as e:
-                ui.push_error("Error: Problem loading the queue.")
+                ui.push_message("Error: Problem loading the queue.")
                 st.exception(e)
                 st.stop()
 
@@ -190,15 +277,15 @@ def getting_started():
         st.subheader("Getting Started")
         st.markdown("##### Select a workflow")
         source_uri = f"s3://{source_bucket}/{FILES_PREFIX}"
-        workflows = io_ops.delta_partition_values(source_uri, "workflow_alt")
+
+        workflows = utils.get_workflows(source_uri)
         workflow = st.selectbox(
             f"Use the drop-down menu to select a workflow (source: {source_uri})",
             [""] + workflows,
         )
         if workflow:
             st.session_state.inspect_workflow = workflow
-
-        if workflow:
+            utils.select_scheme()
             st.markdown("##### Check the results queue")
             if st.button("Check Queue"):
                 check_queue()
@@ -241,14 +328,11 @@ def results_metadata():
         # Workflow schema
         with st.expander("Workflow Scheme"):
             st.json(st.session_state.get('inspect_scheme', {}))
-        # Warnings
-        with st.expander("Warnings"):
-            st.write(st.session_state.get('inspect_warnings', []))
 
 def render_results():
     df_inspect = st.session_state.get('df_inspect', pd.DataFrame())
     if df_inspect.empty:
-        ui.push_error("No files")
+        ui.push_message("No files")
         return
     for c in ("accept", "reject"):
         if c not in df_inspect.columns:
@@ -348,98 +432,57 @@ def queue_results():
 # ============================================================================
 
 def classify_file_decisions():
-    """
-    Classify files as decided or undecided based on accept/reject flags.
-    
-    A file is decided if ANY row has accept=True OR reject=True.
-    A file is undecided if it appears in any row with both flags False/NaN.
-    If the same file is undecided anywhere, it's removed from decided.
-    
-    Args:
-        df: DataFrame with 'files_reportable', 'files_supplementary',
-            'accept', and 'reject'
+    file_types = list(st.session_state.get("inspect_reportable_file_types", []))
 
-    Returns:
-        tuple: (sorted list of decided files, sorted list of undecided files)
-    """
-    df = st.session_state.df_edited
+    df_files   = st.session_state.get("df_processed", pd.DataFrame())
+    df_results = st.session_state.get("df_edited", pd.DataFrame())
 
-    decided = set(st.session_state.super_files) if st.session_state.super_files else set()
-    undecided = set()
+    undecided_mask = ~((df_results["accept"] == True) | (df_results["reject"] == True))
+    undecided_files = (
+        df_results.loc[undecided_mask, file_types]
+        .stack()
+        .explode()          # list cells -> one path per row; scalar cells pass through
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    undecided_files = undecided_files[undecided_files != ""].tolist()
 
-    for _, row in df.iterrows():
-        # Extract paths from both columns safely
-        paths = []
-        for col in ("files_reportable", "files_supplementary"):
-            v = row.get(col, [])
-            if isinstance(v, str):
-                paths.append(v)
-            elif isinstance(v, list):
-                paths.extend(v)
+    # Map each undecided path back to its run and whether it's global (no id_alt).
+    # Plain dicts instead of reindex()/groupby() so a path with no match in
+    # df_files can't silently turn into an unusable NaN group key.
+    lookup = (
+        df_files[["current", "run", "id_alt"]]
+        .assign(current=lambda d: d["current"].astype(str).str.strip())
+        .drop_duplicates(subset="current", keep="last")
+        .set_index("current")
+    )
+    run_by_path = lookup["run"].to_dict()
+    global_by_path = (lookup["id_alt"].astype(str).str.strip() == "").to_dict()
 
-        # Normalize paths: remove None/empty values, coerce to str
-        paths = [
-            str(p).strip()
-            for p in paths
-            if p is not None and str(p).strip() != ""
-        ]
+    run_entries = defaultdict(list)
+    for path in undecided_files:
+        run = run_by_path.get(path)              # None if path isn't in df_files
+        is_global = global_by_path.get(path, False)  # unmatched paths default non-global
+        run_entries[run].append((path, is_global))
 
-        # No paths? Continue
-        if not paths:
-            continue
+    # A run's undecided globals only get excused if every undecided path in
+    # that run is global. Unmatched paths default to is_global=False, so they
+    # (and any run they land in) are never mistakenly excused.
+    excused = {
+        path
+        for entries in run_entries.values()
+        if all(is_global for _, is_global in entries)
+        for path, _ in entries
+    }
 
-        # Decision logic
-        is_decided = bool(row.get("accept", False) or row.get("reject", False))
+    undecided_files = [p for p in undecided_files if p not in excused]
 
-        if is_decided:
-            decided.update(paths)
-        else:
-            undecided.update(paths)
-
-    # Remove any file appearing as undecided anywhere
-    decided -= undecided
-
-    # Return sorted lists (only strings now)
-    st.session_state.decided_files   = sorted(decided)
-    st.session_state.undecided_files = sorted(undecided)
-
-
-def split_queue_by_decision():
-    """
-    Split queue dataframe into decided and undecided subsets.
-    
-    Matching is based on the 'current' column in the dataframe:
-    - If current ∈ decided_files → goes to df_decided
-    - Otherwise → goes to df_undecided
-    
-    Args:
-        decided_files: List of filepaths that have been decided
-        undecided_files: List of filepaths that remain undecided
-        
-    Returns:
-        tuple: (df_decided, df_undecided)
-    """
-    decided_files = st.session_state.decided_files
-    decided_set = set(decided_files)
-    
-    df_queue = st.session_state.get("df_queue", pd.DataFrame()).copy()
-    
-    if df_queue.empty:
-        ui.push_error("Original queue dataframe missing; cannot move source rows.")
-        st.stop()
-    
-    if "current" not in df_queue.columns:
-        ui.push_error("Queue dataframe is missing the 'current' column.")
-        st.stop()
-
-    # Split based on whether 'current' filepath is in decided set
-    mask_decided = df_queue["current"].isin(decided_set)
-    df_decided = df_queue[mask_decided].copy()
-    df_undecided = df_queue[~mask_decided].copy()
+    df_undecided = df_files[df_files["current"].isin(undecided_files)].copy()
+    df_decided = df_files[~df_files["current"].isin(undecided_files)].copy()
 
     st.session_state.df_decided   = df_decided
     st.session_state.df_undecided = df_undecided
-
 
 # ============================================================================
 # Submission Processing
@@ -460,7 +503,7 @@ def execute_submission():
             df_edited  = st.session_state.df_edited
             df_decided = st.session_state.df_decided
             if not user:
-                ui.push_error("User must be defined!")
+                ui.push_message("User must be defined!")
                 return
             try:
                 now_iso = datetime.now(timezone.utc).isoformat()
@@ -468,7 +511,7 @@ def execute_submission():
                 # --- results log ---
                 df_results = df_edited[(df_edited["accept"]) | (df_edited["reject"])]
                 if df_results.empty:
-                    ui.push_error("Something went wrong!")
+                    ui.push_message("Something went wrong!")
                     return
 
                 df_results["inspected_by"] = user
@@ -478,7 +521,7 @@ def execute_submission():
 
                 # --- files table: update inspected -> True ---
                 if df_decided.empty:
-                    ui.push_error("Something went wrong!")
+                    ui.push_message("Something went wrong!")
                     return
                 df_decided["inspected"] = True
                 df_decided["inspected_by"] = user
@@ -508,7 +551,7 @@ def execute_submission():
                 reset_state()
 
             except Exception as e:
-                ui.push_error(f"Submission failed: {e}")
+                ui.push_message(f"Submission failed: {e}")
                 st.exception(e)
                 st.stop()
 
@@ -525,7 +568,6 @@ def check_submission():
             st.write("Inspect the tables below to ensure the correct files leaving / heading back to the queue.")
             # Classify and split files
             classify_file_decisions()
-            split_queue_by_decision()
 
             # Preview changes
             with st.expander("Files leaving the queue"):

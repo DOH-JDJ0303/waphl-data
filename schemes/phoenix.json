@@ -3,7 +3,7 @@
   "workflow": "phoenix",
   "trigger": "Phoenix_Summary.tsv",
   "summary_columns": {
-    "id": "ID",
+    "id": ["ID", "WGS_ID"],
     "qc_status": "Auto_QC_Outcome",
     "qc_reason": "Auto_QC_Failure_Reason",
     "read_depth": "Estimated_Coverage",
