@@ -128,8 +128,8 @@ def formatResults(row){
         assembly_len:  [ 'Genome_Length', 'genome_length', 'assembly_length' ],
         n_contigs:     [ '#_of_Scaffolds_>500bp', 'scaffold_count', 'number_contigs' ],
         per_gc:        [ 'GC_%', 'gc_percent', 'quast_gc_percent' ],
-        species:       [ 'Species', 'species', 'fastani_genus_species' ],
-        species_conf:  [ 'Taxa_Confidence', 'taxa_confidence', 'fastani_ani_estimate' ],
+        species:       [ 'Species', 'species', 'fastani_genus_species', 'Final_Taxa_ID' ],
+        species_conf:  [ 'Taxa_Confidence', 'taxa_confidence', 'fastani_ani_estimate', 'FastANI_%ID' ],
         mlst_1:        [ 'MLST_1', 'mlst_1' ],
         mlst_2:        [ 'MLST_2', 'mlst_2' ],
         mlst_1_scheme: [ 'MLST_Scheme_1', 'mlst_scheme_1' ],
@@ -140,7 +140,7 @@ def formatResults(row){
         vir_genes:     [ 'Hypervirulence_Genes', 'hypervirulence_genes' ],
     ]
 
-    def results = [ id: row.containsKey('ID') ? row.ID : row[row.keySet().iterator().next()] ]
+    def results = [ id: row.containsKey('ID') ? row.ID : (row.containsKey('WGS_ID') ? row.WGS_ID : row[row.keySet().iterator().next()]) ]
     cols_key.each{ key, value -> col = value.findAll{ row.containsKey( it ) }
                                  results[key] = row[col[0]] ? row[col[0]].replaceAll(',',';').replaceAll(' ','_') : null  }
 
