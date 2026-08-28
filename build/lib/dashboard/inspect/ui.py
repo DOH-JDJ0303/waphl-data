@@ -178,9 +178,6 @@ def check_queue():
     # unlisted-type sweep, or anything reportable gets auto-submitted.
     st.session_state.df_queue = utils.type_from_origin(st.session_state.df_queue)
 
-    st.write("DEBUG allowed:", sorted(get_scheme_types()))
-    st.write("DEBUG queue types:", st.session_state.df_queue["type"].value_counts().to_dict())
-
     # Files whose type isn't in the workflow scheme can't be inspected, so mark
     # them inspected, push them back to the files table now, and keep them out
     # of the queue the user sees.

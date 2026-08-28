@@ -5,7 +5,7 @@ import pyarrow as pa
 import math
 from collections import defaultdict
 from deltalake import DeltaTable
-from dashboard.search import ui
+from dashboard.editor import ui
 import shared.ui
 from shared.io_ops import RESULTS_PREFIX, FILES_PREFIX
 
