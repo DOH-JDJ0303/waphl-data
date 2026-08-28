@@ -105,6 +105,7 @@ def build_rows() -> pd.DataFrame:
     # reportable files (in which case it just gets NaN for every file type).
     all_samples = df[df["id_alt"] != ""][["id", "id_alt", "run"]].drop_duplicates()
 
+    warnings = []
     final_rows = []
     for _, srow in all_samples.iterrows():
         sid, id_alt, run = srow["id"], srow["id_alt"], srow["run"]
@@ -129,11 +130,15 @@ def build_rows() -> pd.DataFrame:
             else:
                 row[ft] = list(files)   # one or more paths
         if missing:
-            ui.push_message(
-                f"Sample {sid!r} (run {run!r}) is missing file type(s): {', '.join(missing)}",
-                type="warning",
+            warnings.append(
+                f"{sid!r}: {', '.join(missing)}"
             )
         final_rows.append(row)
+    if warnings:
+        ui.push_message(
+            "Some samples are missing reportable file types:\n\n" + "\n\n".join(warnings),
+            type="warning",
+        )
 
     st.session_state["df_grouped"] = pd.DataFrame(final_rows, columns=out_cols)
 

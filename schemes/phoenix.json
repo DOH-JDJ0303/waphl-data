@@ -10,7 +10,7 @@
     "genome_length": "Genome_Length",
     "number_contigs": "#_of_Scaffolds_>500bp",
     "gc_ratio": "GC_%",
-    "species": "Species",
+    "species": ["Species", "Final_Taxa_ID"],
     "species_confidence": "Taxa_Confidence",
     "subtype_1": "MLST_1",
     "subtype_2": "MLST_2", 
@@ -27,7 +27,7 @@
   ],
   "reportable_files": [
     {
-      "pattern": "execution_report_*",
+      "pattern": ["multiqc_report.html", "execution_report_*"],
       "type": "log"
     },
     {

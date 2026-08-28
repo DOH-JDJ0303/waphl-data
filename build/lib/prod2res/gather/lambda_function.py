@@ -12,7 +12,8 @@ from pathlib import Path
 import uuid
 from typing import Iterable, Dict, Set, Optional, Any, List, Tuple
 
-from shared import io_ops, data_processing
+from shared import io_ops, data_processing, file_typing
+from shared.file_typing import FilePatternMatcher, DEFAULT_TYPE
 
 # ----- Global Setup ----- #
 DEST_BUCKET = os.environ.get("DEST_BUCKET")
@@ -34,14 +35,10 @@ def log_print(msg: Any) -> None:
     print(str(msg), flush=True)
 
 def parse_uri(s3_uri: str) -> Tuple[str, str]:
-    parsed = urllib.parse.urlparse(s3_uri)
-    if parsed.scheme not in ("s3", ""):
-        sys.exit(f"Unsupported URI scheme: {s3_uri}")
-    bucket = parsed.netloc
-    key = re.sub(r"/{2,}", "/", parsed.path.lstrip("/"))
-    if not bucket or not key:
-        sys.exit(f"Malformed S3 URI: {s3_uri}")
-    return bucket, key
+    try:
+        return file_typing.parse_uri(s3_uri)
+    except ValueError as e:
+        sys.exit(str(e))
 
 def fastq_columns(fieldnames: Iterable[str]) -> List[str]:
     """Return all manifest column names that start with 'fastq'."""
@@ -174,41 +171,6 @@ class SampleMatcher:
         """Match multiple texts to sample names."""
         return {text: self.match(text) for text in texts}
 
-class FilePatternMatcher:
-    """
-    Simplified glob-like pattern matcher.
-    Accepts dicts with: {"pattern": str, "type": str, "terra_column": str}
-    Returns the FIRST matching record dict or None.
-    """
-    def __init__(self, pattern_defs: Iterable[Dict[str, Any]]):
-        self.patterns: List[Tuple[re.Pattern, Dict[str, Any]]] = []
-        for pd in pattern_defs:
-            if not isinstance(pd, dict) or "pattern" not in pd:
-                continue
-            pat = pd["pattern"]
-            rx = self._compile(pat)
-            meta = {
-                "type": pd.get("type", "other")
-            }
-            self.patterns.append((rx, meta))
-
-    def _compile(self, pattern: str) -> re.Pattern:
-        buf = []
-        for ch in pattern:
-            if ch == "*":
-                buf.append(".*")
-            elif ch == "?":
-                buf.append(".")
-            else:
-                buf.append(re.escape(ch))
-        return re.compile("^" + "".join(buf) + "$")
-
-    def match(self, filename: str) -> Optional[Dict[str, Any]]:
-        for rx, meta in self.patterns:
-            if rx.match(filename):
-                return meta
-        return None
-
 # ----- Core Logic ----- #
 def _dest_key(sample: Optional[str], workflow: str, run: str, key_bn: str, ts: int) -> str:
     return (
@@ -293,22 +255,20 @@ def classify_keys(
 
     # ----- 3) Everything else comes from the run directory listing -----
     reportable_files = scheme.get("reportable_files", {})
-    fp = FilePatternMatcher(reportable_files) if reportable_files else None
+    fp = FilePatternMatcher(reportable_files)
+    if fp.skipped:
+        log_print(f"Ignoring {len(fp.skipped)} reportable_files entries with no usable pattern")
 
     for key, ts in run_keys.items():
         if f"{run}/reads/" in key:
-            continue # skip the reads subdir, which is already handled by the manifest
+            continue
 
         key_bn = os.path.basename(key)
-        sample = sm.match(key)  # may be None
+        sample = sm.match(key)
 
-        reportable = False
-        ftype = "other"
-        if fp:
-            hit = fp.match(key_bn)
-            if hit:
-                reportable = True
-                ftype = hit.get("type", "other")
+        ftype = fp.match_type(key_bn)
+        reportable = ftype is not None
+        ftype = ftype or DEFAULT_TYPE
 
         dest_key = _dest_key(sample, workflow, run, key_bn, ts)
 

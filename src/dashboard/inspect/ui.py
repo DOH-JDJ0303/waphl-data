@@ -173,6 +173,11 @@ def check_queue():
         ui.push_message(f"Issue gathering data from {uri}:\n{e}")
         return
 
+    # Rows the gather lambda couldn't type (or that predate a scheme change)
+    # come back as "other". Re-derive those from the origin URI before the
+    # unlisted-type sweep, or anything reportable gets auto-submitted.
+    st.session_state.df_queue = utils.type_from_origin(st.session_state.df_queue)
+
     # Files whose type isn't in the workflow scheme can't be inspected, so mark
     # them inspected, push them back to the files table now, and keep them out
     # of the queue the user sees.

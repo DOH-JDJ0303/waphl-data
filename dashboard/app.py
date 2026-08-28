@@ -66,9 +66,10 @@ with st.sidebar:
 if all(k in st.session_state for k in ("user", "prod_bucket", "res_bucket")):
     pg = st.navigation([
         st.Page("workflows/landing.py", title="Home", icon="🏠"),
-        st.Page("workflows/search.py", title="Search Results", icon="🔍"),
         st.Page("workflows/inspect.py", title="Inspect Results", icon="📋"),
         st.Page("workflows/transfer.py", title="Transfer Data", icon="🚚"),
+        st.Page("workflows/editor.py", title="Table Editor", icon="✏️"),
+
     ])
     pg.run()
 else:

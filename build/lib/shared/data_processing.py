@@ -26,7 +26,7 @@ FILES_TABLE_KEYS = [
 ]
 FILES_TABLE_KEYS_MUTABLE = ["reportable", "inspected"]
 FILES_TABLE_MERGE_KEYS = [k for k in FILES_TABLE_KEYS if k not in FILES_TABLE_KEYS_MUTABLE]
-FILES_TABLE_PARTITIONS = ["workflow_alt", "reportable"]
+FILES_TABLE_PARTITIONS = ["workflow_alt", "reportable", "inspected", "type"]
 
 # ----- Results Table -----
 RESULTS_TABLE_KEYS = [
